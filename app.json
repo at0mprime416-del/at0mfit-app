@@ -16,6 +16,11 @@
         "backgroundColor": "#0a0a0a"
       }
     },
-    "owner": "at0mprime"
+    "owner": "at0mprime",
+    "extra": {
+      "eas": {
+        "projectId": "043c2507-50b3-45d9-9a95-8412a51605db"
+      }
+    }
   }
 }
