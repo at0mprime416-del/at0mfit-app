@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "At0m Fit",
+    "slug": "at0mfit",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0a0a0a",
+    "ios": {
+      "bundleIdentifier": "com.at0mfit.app",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.at0mfit.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0a0a0a"
+      }
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}
