@@ -18,6 +18,7 @@
     },
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "owner": "at0mprime"
   }
 }
