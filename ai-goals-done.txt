@@ -1,0 +1,30 @@
+COMPLETED: 2026-03-14
+
+All 4 features built and pushed to main (commit afbf3db):
+
+1. REAL STREAK COUNTER (HomeScreen.js)
+   - Fetches all workouts for user, builds a Set of workout days
+   - Walks backwards day-by-day from today (or yesterday if no workout today)
+   - Shows real number; gold if >= 3, green if >= 7
+   - Label changed to "Day Streak"
+
+2. FORGOT PASSWORD (ForgotPasswordScreen.js + LoginScreen.js + navigation/index.js)
+   - New ForgotPasswordScreen.js matches LoginScreen style exactly
+   - Calls supabase.auth.resetPasswordForEmail(email)
+   - "Forgot password?" link added below Sign In button (muted, small)
+   - Stack.Screen 'ForgotPassword' added to navigator
+
+3. ROTATING QUOTES (HomeScreen.js)
+   - 25 quotes from Goggins, Kobe, Ali, Bruce Lee, Jocko, Jesse Owens,
+     Serena Williams, Jordan, Navy SEAL doctrine, etc.
+   - Deterministic daily selection: quotes[date % 25]
+   - No flicker on refresh
+
+4. AI DAILY GOAL SYSTEM
+   - DB: daily_goals, teams, team_members tables created with RLS
+   - src/lib/aiGoals.js: generateDailyGoal() calls GPT-4o-mini with 14-day
+     activity history, upserts result into daily_goals
+   - markGoalComplete() marks done + credits team tokens if user on a team
+   - HomeScreen loads today's goal (or generates if missing) and shows card:
+     emoji, description, target, +tokens, team name, ai_reasoning, MARK COMPLETE btn
+   - API key stored in .env (gitignored), read via EXPO_PUBLIC_OPENAI_API_KEY

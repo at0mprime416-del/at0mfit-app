@@ -26,16 +26,28 @@ export default function SignUpScreen({ navigation }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [confirmError, setConfirmError] = useState('');
   const [goal, setGoal] = useState('');
+  const [tosAccepted, setTosAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSignUp = async () => {
-    if (!name || !email || !password || !goal) {
+    if (!name || !email || !password || !confirmPassword || !goal) {
       Alert.alert('Missing fields', 'Fill out all fields and pick a goal.');
       return;
     }
     if (password.length < 6) {
       Alert.alert('Weak password', 'Password must be at least 6 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setConfirmError('Passwords do not match.');
+      return;
+    }
+    setConfirmError('');
+    if (!tosAccepted) {
+      Alert.alert('Terms of Service', 'You must accept the Terms of Service to continue.');
       return;
     }
 
@@ -62,11 +74,17 @@ export default function SignUpScreen({ navigation }) {
     }
 
     setLoading(false);
-    Alert.alert(
-      'Account created! 🎯',
-      'Check your email to confirm, then sign in.',
-      [{ text: 'OK', onPress: () => navigation.replace('Login') }]
-    );
+
+    // If session exists, user is auto-confirmed (dev mode) — go straight in
+    if (data.session) {
+      navigation.replace('Main');
+    } else {
+      Alert.alert(
+        'Account created! 🎯',
+        'Check your email to confirm, then sign in.',
+        [{ text: 'OK', onPress: () => navigation.replace('Login') }]
+      );
+    }
   };
 
   return (
@@ -112,12 +130,40 @@ export default function SignUpScreen({ navigation }) {
           <TextInput
             style={styles.input}
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(v) => {
+              setPassword(v);
+              if (confirmPassword && v !== confirmPassword) {
+                setConfirmError('Passwords do not match.');
+              } else {
+                setConfirmError('');
+              }
+            }}
             placeholder="Min 6 characters"
             placeholderTextColor={colors.muted}
             secureTextEntry
             autoCapitalize="none"
           />
+
+          <Text style={styles.label}>CONFIRM PASSWORD</Text>
+          <TextInput
+            style={[styles.input, confirmError ? styles.inputError : null]}
+            value={confirmPassword}
+            onChangeText={(v) => {
+              setConfirmPassword(v);
+              if (v && v !== password) {
+                setConfirmError('Passwords do not match.');
+              } else {
+                setConfirmError('');
+              }
+            }}
+            placeholder="Re-enter password"
+            placeholderTextColor={colors.muted}
+            secureTextEntry
+            autoCapitalize="none"
+          />
+          {confirmError ? (
+            <Text style={styles.errorText}>{confirmError}</Text>
+          ) : null}
 
           <Text style={styles.label}>PRIMARY GOAL</Text>
           <View style={styles.goalGrid}>
@@ -141,6 +187,21 @@ export default function SignUpScreen({ navigation }) {
               </TouchableOpacity>
             ))}
           </View>
+
+          {/* ToS checkbox */}
+          <TouchableOpacity
+            style={styles.tosRow}
+            onPress={() => setTosAccepted((v) => !v)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, tosAccepted && styles.checkboxChecked]}>
+              {tosAccepted && <Text style={styles.checkmark}>✓</Text>}
+            </View>
+            <Text style={styles.tosText}>
+              I accept the{' '}
+              <Text style={styles.tosLink}>Terms of Service</Text>
+            </Text>
+          </TouchableOpacity>
 
           <GoldButton
             title="CREATE ACCOUNT"
@@ -209,6 +270,14 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
   },
+  inputError: {
+    borderColor: colors.error,
+  },
+  errorText: {
+    color: colors.error,
+    fontSize: 12,
+    marginTop: 4,
+  },
   goalGrid: {
     gap: 8,
   },
@@ -229,6 +298,40 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   goalChipTextSelected: {
+    color: colors.gold,
+    fontWeight: '600',
+  },
+  tosRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    gap: 10,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.inputBg,
+  },
+  checkboxChecked: {
+    borderColor: colors.gold,
+    backgroundColor: 'rgba(201,168,76,0.15)',
+  },
+  checkmark: {
+    color: colors.gold,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  tosText: {
+    color: colors.muted,
+    fontSize: 13,
+    flex: 1,
+  },
+  tosLink: {
     color: colors.gold,
     fontWeight: '600',
   },

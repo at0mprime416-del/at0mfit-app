@@ -14,9 +14,30 @@ import { colors } from '../theme/colors';
 import GoldButton from '../components/GoldButton';
 import { supabase } from '../lib/supabase';
 
+function humanizeAuthError(error) {
+  if (!error) return 'Something went wrong. Try again.';
+  const msg = error.message || '';
+  if (msg.includes('Invalid login credentials') || msg.includes('invalid_credentials')) {
+    return 'Wrong email or password. Try again.';
+  }
+  if (msg.includes('Email not confirmed') || msg.includes('email_not_confirmed')) {
+    return 'Check your email to confirm your account first.';
+  }
+  if (
+    msg.includes('network') ||
+    msg.includes('fetch') ||
+    msg.includes('Network') ||
+    msg.includes('Failed to fetch')
+  ) {
+    return "Can't connect. Check your internet.";
+  }
+  return 'Something went wrong. Try again.';
+}
+
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -31,7 +52,7 @@ export default function LoginScreen({ navigation }) {
     });
     setLoading(false);
     if (error) {
-      Alert.alert('Login failed', error.message);
+      Alert.alert('Login failed', humanizeAuthError(error));
     } else {
       navigation.replace('Main');
     }
@@ -68,15 +89,24 @@ export default function LoginScreen({ navigation }) {
           />
 
           <Text style={styles.label}>PASSWORD</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="••••••••"
-            placeholderTextColor={colors.muted}
-            secureTextEntry
-            autoCapitalize="none"
-          />
+          <View style={styles.passwordRow}>
+            <TextInput
+              style={[styles.input, styles.passwordInput]}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="••••••••"
+              placeholderTextColor={colors.muted}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              style={styles.eyeBtn}
+              onPress={() => setShowPassword((v) => !v)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.eyeIcon}>{showPassword ? '🙈' : '👁'}</Text>
+            </TouchableOpacity>
+          </View>
 
           <GoldButton
             title="SIGN IN"
@@ -159,6 +189,22 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     color: colors.text,
     fontSize: 15,
+  },
+  passwordRow: {
+    position: 'relative',
+  },
+  passwordInput: {
+    paddingRight: 52,
+  },
+  eyeBtn: {
+    position: 'absolute',
+    right: 14,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  eyeIcon: {
+    fontSize: 18,
   },
   button: {
     marginTop: 28,

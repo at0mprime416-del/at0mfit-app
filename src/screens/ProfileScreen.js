@@ -6,7 +6,8 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
-  Switch,
+  TouchableOpacity,
+  Modal,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import Card from '../components/Card';
@@ -21,12 +22,31 @@ const GOAL_LABELS = {
   performance: '⚡ Athletic Performance',
 };
 
+const GOALS = Object.entries(GOAL_LABELS).map(([key, label]) => ({ key, label }));
+
 export default function ProfileScreen({ navigation }) {
   const [profile, setProfile] = useState(null);
   const [name, setName] = useState('');
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [stats, setStats] = useState({ totalWorkouts: 0, totalExercises: 0 });
+
+  // Goal editing modal
+  const [goalModalVisible, setGoalModalVisible] = useState(false);
+  const [pendingGoal, setPendingGoal] = useState('');
+  const [savingGoal, setSavingGoal] = useState(false);
+
+  // Physical metrics
+  const [showMetrics, setShowMetrics] = useState(false);
+  const [metricWeight, setMetricWeight] = useState('');
+  const [metricHeightFt, setMetricHeightFt] = useState('');
+  const [metricHeightIn, setMetricHeightIn] = useState('');
+  const [metricAge, setMetricAge] = useState('');
+  const [savingMetrics, setSavingMetrics] = useState(false);
+
+  // Units toggle
+  const [units, setUnits] = useState('lbs');
+  const [savingUnits, setSavingUnits] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -44,6 +64,15 @@ export default function ProfileScreen({ navigation }) {
 
     setProfile({ ...prof, email: user.email });
     setName(prof?.name || '');
+    setUnits(prof?.preferred_units || 'lbs');
+
+    // Pre-fill physical metrics
+    if (prof?.weight_lbs) setMetricWeight(String(prof.weight_lbs));
+    if (prof?.height_inches) {
+      setMetricHeightFt(String(Math.floor(prof.height_inches / 12)));
+      setMetricHeightIn(String(prof.height_inches % 12));
+    }
+    if (prof?.age) setMetricAge(String(prof.age));
 
     // Total stats
     const { data: workouts } = await supabase
@@ -73,6 +102,53 @@ export default function ProfileScreen({ navigation }) {
     setEditing(false);
   };
 
+  const saveGoal = async () => {
+    if (!pendingGoal) return;
+    setSavingGoal(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase
+      .from('profiles')
+      .update({ goal: pendingGoal })
+      .eq('id', user.id);
+    setProfile((p) => ({ ...p, goal: pendingGoal }));
+    setSavingGoal(false);
+    setGoalModalVisible(false);
+  };
+
+  const saveMetrics = async () => {
+    setSavingMetrics(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const ft = parseInt(metricHeightFt) || 0;
+    const inches = parseInt(metricHeightIn) || 0;
+    const totalInches = ft * 12 + inches;
+
+    await supabase
+      .from('profiles')
+      .update({
+        weight_lbs: parseFloat(metricWeight) || null,
+        height_inches: totalInches > 0 ? totalInches : null,
+        age: parseInt(metricAge) || null,
+      })
+      .eq('id', user.id);
+
+    setSavingMetrics(false);
+    setShowMetrics(false);
+    Alert.alert('Saved!', 'Physical metrics updated.');
+  };
+
+  const toggleUnits = async () => {
+    const newUnits = units === 'lbs' ? 'kg' : 'lbs';
+    setSavingUnits(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase
+      .from('profiles')
+      .update({ preferred_units: newUnits })
+      .eq('id', user.id);
+    setUnits(newUnits);
+    setProfile((p) => ({ ...p, preferred_units: newUnits }));
+    setSavingUnits(false);
+  };
+
   const handleSignOut = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
@@ -85,6 +161,13 @@ export default function ProfileScreen({ navigation }) {
         },
       },
     ]);
+  };
+
+  const heightDisplay = () => {
+    if (!profile?.height_inches) return '—';
+    const ft = Math.floor(profile.height_inches / 12);
+    const inches = profile.height_inches % 12;
+    return `${ft}'${inches}"`;
   };
 
   return (
@@ -129,11 +212,103 @@ export default function ProfileScreen({ navigation }) {
       </View>
 
       {/* Goal */}
-      <Text style={styles.sectionLabel}>CURRENT GOAL</Text>
+      <View style={styles.sectionRowHeader}>
+        <Text style={styles.sectionLabel}>CURRENT GOAL</Text>
+        <TouchableOpacity
+          style={styles.editGoalBtn}
+          onPress={() => {
+            setPendingGoal(profile?.goal || '');
+            setGoalModalVisible(true);
+          }}
+        >
+          <Text style={styles.editGoalBtnText}>Edit Goal</Text>
+        </TouchableOpacity>
+      </View>
       <Card style={styles.goalCard}>
         <Text style={styles.goalText}>
           {GOAL_LABELS[profile?.goal] || '— Not set'}
         </Text>
+      </Card>
+
+      {/* Physical Metrics */}
+      <View style={styles.sectionRowHeader}>
+        <Text style={styles.sectionLabel}>PHYSICAL METRICS</Text>
+        <TouchableOpacity
+          style={styles.editGoalBtn}
+          onPress={() => setShowMetrics((v) => !v)}
+        >
+          <Text style={styles.editGoalBtnText}>{showMetrics ? 'Done' : 'Edit'}</Text>
+        </TouchableOpacity>
+      </View>
+      <Card style={styles.metricsCard}>
+        {showMetrics ? (
+          <View>
+            <Text style={styles.metricLabel}>WEIGHT (lbs)</Text>
+            <TextInput
+              style={styles.metricInput}
+              value={metricWeight}
+              onChangeText={setMetricWeight}
+              placeholder="185"
+              placeholderTextColor={colors.muted}
+              keyboardType="decimal-pad"
+            />
+            <Text style={styles.metricLabel}>HEIGHT</Text>
+            <View style={styles.heightRow}>
+              <TextInput
+                style={[styles.metricInput, { flex: 1 }]}
+                value={metricHeightFt}
+                onChangeText={setMetricHeightFt}
+                placeholder="5"
+                placeholderTextColor={colors.muted}
+                keyboardType="numeric"
+              />
+              <Text style={styles.heightUnit}>ft</Text>
+              <TextInput
+                style={[styles.metricInput, { flex: 1 }]}
+                value={metricHeightIn}
+                onChangeText={setMetricHeightIn}
+                placeholder="11"
+                placeholderTextColor={colors.muted}
+                keyboardType="numeric"
+              />
+              <Text style={styles.heightUnit}>in</Text>
+            </View>
+            <Text style={styles.metricLabel}>AGE</Text>
+            <TextInput
+              style={styles.metricInput}
+              value={metricAge}
+              onChangeText={setMetricAge}
+              placeholder="30"
+              placeholderTextColor={colors.muted}
+              keyboardType="numeric"
+            />
+            <GoldButton
+              title="SAVE METRICS"
+              onPress={saveMetrics}
+              loading={savingMetrics}
+              style={{ marginTop: 14 }}
+            />
+          </View>
+        ) : (
+          <View style={styles.metricsDisplay}>
+            <View style={styles.metricItem}>
+              <Text style={styles.metricValue}>
+                {profile?.weight_lbs ? `${profile.weight_lbs} lbs` : '—'}
+              </Text>
+              <Text style={styles.metricItemLabel}>WEIGHT</Text>
+            </View>
+            <View style={styles.metricItem}>
+              <Text style={styles.metricValue}>{heightDisplay()}</Text>
+              <Text style={styles.metricItemLabel}>HEIGHT</Text>
+            </View>
+            <View style={styles.metricItem}>
+              <Text style={styles.metricValue}>
+                {profile?.age || '—'}
+              </Text>
+              <Text style={styles.metricItemLabel}>AGE</Text>
+            </View>
+          </View>
+        )}
       </Card>
 
       {/* Stats */}
@@ -154,20 +329,30 @@ export default function ProfileScreen({ navigation }) {
       {/* Settings */}
       <Text style={styles.sectionLabel}>SETTINGS</Text>
       <Card>
+        {/* Theme: static info row (app is dark-only) */}
         <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>Dark Mode</Text>
-          <Switch
-            value={true}
-            onValueChange={() => {}}
-            trackColor={{ false: colors.border, true: colors.gold }}
-            thumbColor={colors.background}
-            disabled
-          />
+          <Text style={styles.settingLabel}>Theme</Text>
+          <Text style={styles.settingValue}>Dark ⚫</Text>
         </View>
         <View style={styles.divider} />
+        {/* Units: functional toggle */}
         <View style={styles.settingRow}>
           <Text style={styles.settingLabel}>Units</Text>
-          <Text style={styles.settingValue}>lbs</Text>
+          <TouchableOpacity
+            style={styles.unitsToggle}
+            onPress={toggleUnits}
+            disabled={savingUnits}
+          >
+            <Text style={[
+              styles.unitsOption,
+              units === 'lbs' && styles.unitsOptionActive,
+            ]}>lbs</Text>
+            <Text style={styles.unitsSep}>/</Text>
+            <Text style={[
+              styles.unitsOption,
+              units === 'kg' && styles.unitsOptionActive,
+            ]}>kg</Text>
+          </TouchableOpacity>
         </View>
         <View style={styles.divider} />
         <View style={styles.settingRow}>
@@ -183,6 +368,45 @@ export default function ProfileScreen({ navigation }) {
         onPress={handleSignOut}
         style={styles.signOutBtn}
       />
+
+      {/* Goal edit modal */}
+      <Modal
+        visible={goalModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setGoalModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>EDIT GOAL</Text>
+            {GOALS.map((g) => (
+              <TouchableOpacity
+                key={g.key}
+                style={[styles.goalChip, pendingGoal === g.key && styles.goalChipSelected]}
+                onPress={() => setPendingGoal(g.key)}
+              >
+                <Text style={[styles.goalChipText, pendingGoal === g.key && styles.goalChipTextSelected]}>
+                  {g.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => setGoalModalVisible(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <GoldButton
+                title="SAVE"
+                onPress={saveGoal}
+                loading={savingGoal}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -256,12 +480,81 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginTop: 8,
   },
+  sectionRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  editGoalBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.gold,
+  },
+  editGoalBtnText: {
+    color: colors.gold,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   goalCard: {
     marginBottom: 20,
   },
   goalText: {
     fontSize: 15,
     color: colors.text,
+  },
+  metricsCard: {
+    marginBottom: 20,
+  },
+  metricsDisplay: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 8,
+  },
+  metricItem: {
+    alignItems: 'center',
+  },
+  metricValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  metricItemLabel: {
+    fontSize: 9,
+    color: colors.muted,
+    letterSpacing: 1,
+    fontWeight: '700',
+  },
+  metricLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.gold,
+    letterSpacing: 1.5,
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  metricInput: {
+    backgroundColor: colors.inputBg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.text,
+    fontSize: 15,
+  },
+  heightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  heightUnit: {
+    color: colors.muted,
+    fontSize: 13,
   },
   statsRow: {
     flexDirection: 'row',
@@ -303,7 +596,90 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: colors.border,
   },
+  unitsToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 4,
+  },
+  unitsOption: {
+    fontSize: 13,
+    color: colors.muted,
+    fontWeight: '600',
+  },
+  unitsOptionActive: {
+    color: colors.gold,
+  },
+  unitsSep: {
+    color: colors.border,
+    fontSize: 13,
+  },
   signOutBtn: {
     marginTop: 28,
+  },
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  modalTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.gold,
+    letterSpacing: 2,
+    marginBottom: 20,
+  },
+  goalChip: {
+    backgroundColor: colors.inputBg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  goalChipSelected: {
+    borderColor: colors.gold,
+    backgroundColor: 'rgba(201,168,76,0.12)',
+  },
+  goalChipText: {
+    color: colors.muted,
+    fontSize: 14,
+  },
+  goalChipTextSelected: {
+    color: colors.gold,
+    fontWeight: '600',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  modalCancel: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  modalCancelText: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { supabase } from '../lib/supabase';
@@ -12,6 +13,7 @@ export default function SplashScreen({ navigation }) {
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const logoScale = useRef(new Animated.Value(0.7)).current;
   const taglineOpacity = useRef(new Animated.Value(0)).current;
+  const [showSpinner, setShowSpinner] = useState(false);
 
   useEffect(() => {
     // Animate logo in
@@ -36,12 +38,18 @@ export default function SplashScreen({ navigation }) {
       }),
     ]).start();
 
+    // Show spinner after 1.5s if auth hasn't resolved
+    const spinnerTimer = setTimeout(() => setShowSpinner(true), 1500);
+
     // Check auth and route
     const checkAuth = async () => {
       await new Promise((r) => setTimeout(r, 2000));
       const {
         data: { session },
       } = await supabase.auth.getSession();
+
+      clearTimeout(spinnerTimer);
+      setShowSpinner(false);
 
       if (session) {
         navigation.replace('Main');
@@ -51,6 +59,8 @@ export default function SplashScreen({ navigation }) {
     };
 
     checkAuth();
+
+    return () => clearTimeout(spinnerTimer);
   }, []);
 
   return (
@@ -72,6 +82,14 @@ export default function SplashScreen({ navigation }) {
       <Animated.Text style={[styles.tagline, { opacity: taglineOpacity }]}>
         Train like an element. Perform at scale.
       </Animated.Text>
+
+      {showSpinner && (
+        <ActivityIndicator
+          size="small"
+          color={colors.gold}
+          style={styles.spinner}
+        />
+      )}
     </View>
   );
 }
@@ -117,5 +135,8 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textAlign: 'center',
     paddingHorizontal: 40,
+  },
+  spinner: {
+    marginTop: 32,
   },
 });
