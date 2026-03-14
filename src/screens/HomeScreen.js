@@ -309,53 +309,137 @@ export default function HomeScreen({ navigation }) {
         <Text style={styles.atomBadge}>⚛</Text>
       </View>
 
-      {/* TODAY'S GOAL */}
-      <Text style={styles.sectionLabel}>TODAY'S GOAL</Text>
-      {goalLoading ? (
-        <Card style={styles.goalCard}>
-          <Text style={styles.goalLoadingText}>⚡ AI is setting your goal…</Text>
-        </Card>
-      ) : dailyGoal ? (
-        <Card style={styles.goalCard}>
-          <View style={styles.goalHeader}>
-            <Text style={styles.goalEmoji}>{goalEmoji(dailyGoal.goal_type)}</Text>
-            <View style={styles.goalHeaderText}>
-              <Text style={styles.goalDescription}>{dailyGoal.goal_description}</Text>
-              {dailyGoal.target_value != null && (
-                <Text style={styles.goalTarget}>
-                  {Number(dailyGoal.target_value).toFixed(
-                    dailyGoal.target_unit === 'miles' ? 1 : 0
-                  )}{' '}
-                  {dailyGoal.target_unit}
-                </Text>
+      {/* AI DAILY BRIEF (PRO) or TODAY'S GOAL (FREE) */}
+      {profile?.subscription_tier === 'pro' ? (
+        <>
+          <Text style={styles.sectionLabel}>⚡ AI DAILY BRIEF</Text>
+          {goalLoading ? (
+            <Card style={styles.goalCard}>
+              <Text style={styles.goalLoadingText}>⚡ AI is analyzing your history…</Text>
+            </Card>
+          ) : dailyGoal ? (
+            <Card style={[styles.goalCard, styles.aiBriefCard]}>
+              {/* Goal */}
+              <View style={styles.goalHeader}>
+                <Text style={styles.goalEmoji}>{goalEmoji(dailyGoal.goal_type)}</Text>
+                <View style={styles.goalHeaderText}>
+                  <Text style={styles.goalDescription}>{dailyGoal.goal_description}</Text>
+                  {dailyGoal.target_value != null && (
+                    <Text style={styles.goalTarget}>
+                      {Number(dailyGoal.target_value).toFixed(dailyGoal.target_unit === 'miles' ? 1 : 0)}{' '}
+                      {dailyGoal.target_unit}
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.aiBriefBadge}>
+                  <Text style={styles.aiBriefBadgeText}>PRO</Text>
+                </View>
+              </View>
+
+              {/* AI Reasoning */}
+              {dailyGoal.ai_reasoning ? (
+                <Text style={styles.goalReasoning}>{dailyGoal.ai_reasoning}</Text>
+              ) : null}
+
+              {/* Nutrition Focus */}
+              {dailyGoal.nutrition_recommendation ? (
+                <View style={styles.briefRow}>
+                  <Text style={styles.briefRowIcon}>🥗</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.briefRowLabel}>NUTRITION</Text>
+                    <Text style={styles.briefRowValue}>
+                      {dailyGoal.nutrition_recommendation.carb_day_type?.toUpperCase() || 'MODERATE'} CARB DAY
+                      {dailyGoal.nutrition_recommendation.eating_window_start
+                        ? ` · Eat ${dailyGoal.nutrition_recommendation.eating_window_start}–${dailyGoal.nutrition_recommendation.eating_window_end}`
+                        : ''}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+
+              {/* Sleep Recommendation */}
+              {dailyGoal.sleep_recommendation ? (
+                <View style={styles.briefRow}>
+                  <Text style={styles.briefRowIcon}>😴</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.briefRowLabel}>SLEEP TARGET</Text>
+                    <Text style={styles.briefRowValue}>
+                      {dailyGoal.sleep_recommendation.target_hours}hrs
+                      {dailyGoal.sleep_recommendation.notes ? ` · ${dailyGoal.sleep_recommendation.notes}` : ''}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+
+              {/* Supplement Reminder */}
+              {dailyGoal.supplement_reminder ? (
+                <View style={styles.briefRow}>
+                  <Text style={styles.briefRowIcon}>💊</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.briefRowLabel}>SUPPLEMENTS</Text>
+                    <Text style={styles.briefRowValue}>{dailyGoal.supplement_reminder}</Text>
+                  </View>
+                </View>
+              ) : null}
+
+              <View style={styles.goalMeta}>
+                <Text style={styles.goalTokens}>+{dailyGoal.tokens_reward} tokens</Text>
+                {teamMembership?.teams?.name && (
+                  <Text style={styles.goalTeam}>→ {teamMembership.teams.name}</Text>
+                )}
+              </View>
+
+              {dailyGoal.completed ? (
+                <View style={styles.completedBadge}>
+                  <Text style={styles.completedText}>✓ COMPLETED</Text>
+                </View>
+              ) : (
+                <GoldButton title="MARK COMPLETE" onPress={handleMarkComplete} style={styles.cardButton} />
               )}
-            </View>
-          </View>
-
-          <View style={styles.goalMeta}>
-            <Text style={styles.goalTokens}>+{dailyGoal.tokens_reward} tokens</Text>
-            {teamMembership?.teams?.name && (
-              <Text style={styles.goalTeam}>→ {teamMembership.teams.name}</Text>
-            )}
-          </View>
-
-          {dailyGoal.ai_reasoning ? (
-            <Text style={styles.goalReasoning}>{dailyGoal.ai_reasoning}</Text>
+            </Card>
           ) : null}
-
-          {dailyGoal.completed ? (
-            <View style={styles.completedBadge}>
-              <Text style={styles.completedText}>✓ COMPLETED</Text>
-            </View>
-          ) : (
-            <GoldButton
-              title="MARK COMPLETE"
-              onPress={handleMarkComplete}
-              style={styles.cardButton}
-            />
-          )}
-        </Card>
-      ) : null}
+        </>
+      ) : (
+        <>
+          <Text style={styles.sectionLabel}>TODAY'S GOAL</Text>
+          {goalLoading ? (
+            <Card style={styles.goalCard}>
+              <Text style={styles.goalLoadingText}>⚡ AI is setting your goal…</Text>
+            </Card>
+          ) : dailyGoal ? (
+            <Card style={styles.goalCard}>
+              <View style={styles.goalHeader}>
+                <Text style={styles.goalEmoji}>{goalEmoji(dailyGoal.goal_type)}</Text>
+                <View style={styles.goalHeaderText}>
+                  <Text style={styles.goalDescription}>{dailyGoal.goal_description}</Text>
+                  {dailyGoal.target_value != null && (
+                    <Text style={styles.goalTarget}>
+                      {Number(dailyGoal.target_value).toFixed(dailyGoal.target_unit === 'miles' ? 1 : 0)}{' '}
+                      {dailyGoal.target_unit}
+                    </Text>
+                  )}
+                </View>
+              </View>
+              <View style={styles.goalMeta}>
+                <Text style={styles.goalTokens}>+{dailyGoal.tokens_reward} tokens</Text>
+                {teamMembership?.teams?.name && (
+                  <Text style={styles.goalTeam}>→ {teamMembership.teams.name}</Text>
+                )}
+              </View>
+              {dailyGoal.ai_reasoning ? (
+                <Text style={styles.goalReasoning}>{dailyGoal.ai_reasoning}</Text>
+              ) : null}
+              {dailyGoal.completed ? (
+                <View style={styles.completedBadge}>
+                  <Text style={styles.completedText}>✓ COMPLETED</Text>
+                </View>
+              ) : (
+                <GoldButton title="MARK COMPLETE" onPress={handleMarkComplete} style={styles.cardButton} />
+              )}
+            </Card>
+          ) : null}
+        </>
+      )}
 
       {/* Upgrade card for FREE tier */}
       {profile?.subscription_tier !== 'pro' && (
@@ -622,6 +706,52 @@ const styles = StyleSheet.create({
     color: colors.gold,
     letterSpacing: 2,
     marginBottom: 10,
+  },
+  // AI Brief card
+  aiBriefCard: {
+    borderWidth: 1,
+    borderColor: 'rgba(0,212,255,0.3)',
+    backgroundColor: 'rgba(0,212,255,0.04)',
+  },
+  aiBriefBadge: {
+    backgroundColor: 'rgba(0,212,255,0.15)',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(0,212,255,0.4)',
+  },
+  aiBriefBadgeText: {
+    color: '#00d4ff',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+  briefRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    marginTop: 4,
+  },
+  briefRowIcon: {
+    fontSize: 18,
+    marginTop: 1,
+  },
+  briefRowLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.muted,
+    letterSpacing: 1.5,
+    marginBottom: 2,
+  },
+  briefRowValue: {
+    fontSize: 13,
+    color: colors.text,
+    fontWeight: '600',
+    lineHeight: 18,
   },
   // Goal card
   goalCard: {

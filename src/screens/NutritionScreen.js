@@ -51,6 +51,14 @@ export default function NutritionScreen() {
   const [savingMeal, setSavingMeal] = useState(false);
   const [savingSupp, setSavingSupp] = useState(false);
 
+  // Sleep form
+  const [todaySleep, setTodaySleep] = useState(null);
+  const [showSleepForm, setShowSleepForm] = useState(false);
+  const [sleepHours, setSleepHours] = useState('');
+  const [sleepQuality, setSleepQuality] = useState(7);
+  const [sleepNotes, setSleepNotes] = useState('');
+  const [savingSleep, setSavingSleep] = useState(false);
+
   // Meal form fields
   const [mealName, setMealName] = useState('');
   const [mealCals, setMealCals] = useState('');
@@ -88,6 +96,15 @@ export default function NutritionScreen() {
       .eq('date', today)
       .order('created_at', { ascending: true });
     setSupplements(suppData || []);
+
+    // Load today's sleep log
+    const { data: sleepData } = await supabase
+      .from('sleep_logs')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('date', today)
+      .single();
+    setTodaySleep(sleepData || null);
   }, [today]);
 
   useEffect(() => {
@@ -147,6 +164,33 @@ export default function NutritionScreen() {
 
   const deleteSupp = async (id) => {
     await supabase.from('supplement_logs').delete().eq('id', id);
+    loadData();
+  };
+
+  const saveSleep = async () => {
+    const hours = parseFloat(sleepHours);
+    if (!hours || hours <= 0 || hours > 24) {
+      Alert.alert('Invalid', 'Enter hours between 0.5 and 24.');
+      return;
+    }
+    setSavingSleep(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('sleep_logs').upsert(
+      {
+        user_id: user.id,
+        date: today,
+        hours_slept: hours,
+        sleep_quality: sleepQuality,
+        notes: sleepNotes.trim() || null,
+      },
+      { onConflict: 'user_id,date' }
+    );
+    setSavingSleep(false);
+    if (error) { Alert.alert('Error', error.message); return; }
+    setSleepHours('');
+    setSleepQuality(7);
+    setSleepNotes('');
+    setShowSleepForm(false);
     loadData();
   };
 
@@ -346,6 +390,74 @@ export default function NutritionScreen() {
           ))
         )}
 
+        {/* Sleep Log */}
+        <View style={styles.sectionRowHeader}>
+          <Text style={styles.sectionLabel}>SLEEP LOG</Text>
+          <TouchableOpacity style={styles.addRowBtn} onPress={() => setShowSleepForm((v) => !v)}>
+            <Text style={styles.addRowBtnText}>{showSleepForm ? '— Cancel' : '+ LOG SLEEP'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {todaySleep && !showSleepForm && (
+          <Card style={styles.sleepCard}>
+            <View style={styles.sleepRow}>
+              <Text style={styles.sleepIcon}>😴</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sleepHours}>{todaySleep.hours_slept} hrs</Text>
+                <Text style={styles.sleepQualityText}>Quality: {todaySleep.sleep_quality}/10</Text>
+                {todaySleep.notes ? <Text style={styles.sleepNotes}>{todaySleep.notes}</Text> : null}
+              </View>
+              <TouchableOpacity onPress={() => setShowSleepForm(true)}>
+                <Text style={styles.editBtn}>EDIT</Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+        )}
+
+        {!todaySleep && !showSleepForm && (
+          <Card style={styles.emptyCard}>
+            <Text style={styles.emptyText}>No sleep logged yet</Text>
+            <Text style={styles.emptySub}>Track last night's sleep for better AI coaching</Text>
+          </Card>
+        )}
+
+        {showSleepForm && (
+          <Card style={styles.formCard}>
+            <Text style={styles.formTitle}>LOG SLEEP</Text>
+            <Text style={styles.fieldLabel}>HOURS SLEPT *</Text>
+            <TextInput
+              style={styles.input}
+              value={sleepHours}
+              onChangeText={setSleepHours}
+              placeholder="7.5"
+              placeholderTextColor={colors.muted}
+              keyboardType="decimal-pad"
+            />
+            <Text style={styles.fieldLabel}>SLEEP QUALITY: {sleepQuality}/10</Text>
+            <View style={styles.qualityRow}>
+              {[1,2,3,4,5,6,7,8,9,10].map((n) => (
+                <TouchableOpacity
+                  key={n}
+                  style={[styles.qualityBtn, sleepQuality === n && styles.qualityBtnActive]}
+                  onPress={() => setSleepQuality(n)}
+                >
+                  <Text style={[styles.qualityBtnText, sleepQuality === n && styles.qualityBtnTextActive]}>{n}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.fieldLabel}>NOTES (optional)</Text>
+            <TextInput
+              style={[styles.input, styles.notesInput]}
+              value={sleepNotes}
+              onChangeText={setSleepNotes}
+              placeholder="Deep sleep, woke up once..."
+              placeholderTextColor={colors.muted}
+              multiline
+            />
+            <GoldButton title="SAVE SLEEP" onPress={saveSleep} loading={savingSleep} style={{ marginTop: 12 }} />
+          </Card>
+        )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </KeyboardAvoidingView>
@@ -420,4 +532,20 @@ const styles = StyleSheet.create({
   suppCard: { marginBottom: 8 },
   suppName: { fontSize: 15, fontWeight: '700', color: colors.text },
   suppDetail: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  sleepCard: { marginBottom: 8 },
+  sleepRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sleepIcon: { fontSize: 28 },
+  sleepHours: { fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 2 },
+  sleepQualityText: { fontSize: 13, color: colors.gold, fontWeight: '600' },
+  sleepNotes: { fontSize: 12, color: colors.muted, marginTop: 4, fontStyle: 'italic' },
+  editBtn: { color: colors.gold, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
+  qualityRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6, marginBottom: 4 },
+  qualityBtn: {
+    width: 36, height: 36, borderRadius: 8, borderWidth: 1,
+    borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.inputBg,
+  },
+  qualityBtnActive: { borderColor: colors.gold, backgroundColor: colors.gold + '22' },
+  qualityBtnText: { color: colors.muted, fontSize: 13, fontWeight: '600' },
+  qualityBtnTextActive: { color: colors.gold },
 });
