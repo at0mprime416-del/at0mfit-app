@@ -10,11 +10,15 @@ import {
   ScrollView,
   StatusBar,
   Platform,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import MapView, { Polyline, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { colors } from '../theme/colors';
+
+const GOOGLE_MAPS_API_KEY = 'AIzaSyBYAe1iwUyAoMnZ3hIYG7P30Tb8oAiCwxM';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -49,6 +53,107 @@ const formatPace = (paceSeconds) => {
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 
+// Sample array down to maxPoints evenly
+const sampleCoords = (arr, maxPoints) => {
+  if (arr.length <= maxPoints) return arr;
+  const step = arr.length / maxPoints;
+  const result = [];
+  for (let i = 0; i < maxPoints; i++) {
+    result.push(arr[Math.round(i * step)]);
+  }
+  return result;
+};
+
+// ─── Google Maps API Calls ───────────────────────────────────────────────────
+
+const fetchElevation = async (lat, lng) => {
+  try {
+    const url = `https://maps.googleapis.com/maps/api/elevation/json?locations=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      return data.results[0].elevation; // meters
+    }
+  } catch (e) {
+    // Silent — elevation is non-critical
+  }
+  return null;
+};
+
+const snapToRoads = async (coordsArr) => {
+  try {
+    // Roads API max 100 points
+    const sampled = sampleCoords(coordsArr, 100);
+    const path = sampled.map((c) => `${c.latitude},${c.longitude}`).join('|');
+    const url = `https://roads.googleapis.com/v1/snapToRoads?path=${path}&interpolate=true&key=${GOOGLE_MAPS_API_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.snappedPoints && data.snappedPoints.length > 0) {
+      return data.snappedPoints.map((p) => ({
+        latitude: p.location.latitude,
+        longitude: p.location.longitude,
+      }));
+    }
+  } catch (e) {
+    // Silent — fallback to original coords
+  }
+  return null;
+};
+
+const reverseGeocode = async (lat, lng) => {
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      // Search all results for neighborhood/sublocality/locality
+      for (const result of data.results) {
+        for (const component of result.address_components) {
+          if (
+            component.types.includes('neighborhood') ||
+            component.types.includes('sublocality') ||
+            component.types.includes('sublocality_level_1')
+          ) {
+            return component.long_name;
+          }
+        }
+      }
+      // Fallback to locality
+      for (const result of data.results) {
+        for (const component of result.address_components) {
+          if (component.types.includes('locality')) {
+            return component.long_name;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // Silent
+  }
+  return null;
+};
+
+// Build static map URL for route preview thumbnail
+const buildStaticMapUrl = (coordsArr) => {
+  const sampled = sampleCoords(coordsArr, 50);
+  const pathStr = sampled.map((c) => `${c.latitude},${c.longitude}`).join('|');
+  return `https://maps.googleapis.com/maps/api/staticmap?size=600x300&path=color:0xC9A84C|weight:3|${pathStr}&key=${GOOGLE_MAPS_API_KEY}`;
+};
+
+// ─── Dark Map Style (At0m Fit aesthetic) ─────────────────────────────────────
+
+const DARK_MAP_STYLE = [
+  { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8888aa' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a2e' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2d2d44' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#212133' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#3d3d5c' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a0a1a' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+];
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function LiveRunScreen({ navigation }) {
@@ -75,6 +180,24 @@ export default function LiveRunScreen({ navigation }) {
   // Timer ref
   const timerRef = useRef(null);
   const elapsedRef = useRef(0); // shadow ref for use inside closures
+
+  // ─── UPGRADE 1: Elevation tracking ────────────────────────────────────────
+  const [elevation, setElevation] = useState(0);         // current elevation in feet
+  const [elevationGain, setElevationGain] = useState(0); // accumulated gain in feet
+  const [elevationLoss, setElevationLoss] = useState(0); // accumulated loss in feet
+  const lastElevationRef = useRef(null);                  // last known elevation (meters)
+  const gpsUpdateCountRef = useRef(0);                    // counter for batching elevation calls
+  const elevationGainRef = useRef(0);                     // shadow ref for save
+
+  // ─── UPGRADE 2: Snap-to-roads ─────────────────────────────────────────────
+  const [optimizing, setOptimizing] = useState(false); // "Optimizing route..." overlay
+
+  // ─── UPGRADE 3: Places auto-naming ────────────────────────────────────────
+  const [runName, setRunName] = useState('');
+  const startNamedRef = useRef(false); // only reverse-geocode once
+
+  // ─── UPGRADE 5: Static map preview ────────────────────────────────────────
+  const [staticMapUrl, setStaticMapUrl] = useState(null);
 
   // Save modal
   const [showModal, setShowModal] = useState(false);
@@ -131,6 +254,16 @@ export default function LiveRunScreen({ navigation }) {
 
     setCurrentCoord(newCoord);
 
+    // UPGRADE 3: Auto-name on first GPS fix
+    if (!startNamedRef.current) {
+      startNamedRef.current = true;
+      reverseGeocode(latitude, longitude).then((areaName) => {
+        if (areaName) {
+          setRunName(`${areaName} Run`);
+        }
+      });
+    }
+
     setCoords((prev) => {
       if (prev.length > 0) {
         const last = prev[prev.length - 1];
@@ -174,6 +307,32 @@ export default function LiveRunScreen({ navigation }) {
           return newDist;
         });
       }
+
+      // UPGRADE 1: Elevation — call every 10th GPS update
+      gpsUpdateCountRef.current += 1;
+      if (gpsUpdateCountRef.current % 10 === 0) {
+        fetchElevation(latitude, longitude).then((elevMeters) => {
+          if (elevMeters !== null) {
+            const elevFeet = elevMeters * 3.28084;
+            setElevation(Math.round(elevFeet));
+
+            if (lastElevationRef.current !== null) {
+              const delta = elevMeters - lastElevationRef.current;
+              if (delta > 0) {
+                setElevationGain((g) => {
+                  const newGain = g + delta * 3.28084;
+                  elevationGainRef.current = newGain;
+                  return newGain;
+                });
+              } else if (delta < 0) {
+                setElevationLoss((l) => l + Math.abs(delta) * 3.28084);
+              }
+            }
+            lastElevationRef.current = elevMeters;
+          }
+        });
+      }
+
       return [...prev, newCoord];
     });
   }, []);
@@ -196,6 +355,21 @@ export default function LiveRunScreen({ navigation }) {
     finalDistance.current = 0;
     finalElapsed.current = 0;
     finalSplits.current = [];
+
+    // Reset elevation
+    setElevation(0);
+    setElevationGain(0);
+    setElevationLoss(0);
+    lastElevationRef.current = null;
+    gpsUpdateCountRef.current = 0;
+    elevationGainRef.current = 0;
+
+    // Reset naming
+    setRunName('');
+    startNamedRef.current = false;
+
+    // Reset static map
+    setStaticMapUrl(null);
 
     setStatus('running');
 
@@ -232,7 +406,7 @@ export default function LiveRunScreen({ navigation }) {
     locationSubscription.current = sub;
   };
 
-  const finishRun = () => {
+  const finishRun = async () => {
     if (locationSubscription.current) {
       locationSubscription.current.remove();
       locationSubscription.current = null;
@@ -245,7 +419,37 @@ export default function LiveRunScreen({ navigation }) {
     setDistance((d) => { finalDistance.current = d; return d; });
     setElapsed((e) => { finalElapsed.current = e; return e; });
     setStatus('finished');
-    setShowModal(true);
+
+    // UPGRADE 2: Snap to roads before showing modal
+    setOptimizing(true);
+
+    setCoords((currentCoords) => {
+      const runCoords = [...currentCoords];
+
+      // Build static map URL (UPGRADE 5) + snap to roads (UPGRADE 2) in parallel
+      const doOptimize = async () => {
+        const [snapped] = await Promise.all([
+          runCoords.length >= 2 ? snapToRoads(runCoords) : Promise.resolve(null),
+        ]);
+
+        let finalCoords = runCoords;
+        if (snapped && snapped.length > 0) {
+          finalCoords = snapped;
+          setCoords(snapped);
+        }
+
+        // Build static map thumbnail
+        if (finalCoords.length >= 2) {
+          setStaticMapUrl(buildStaticMapUrl(finalCoords));
+        }
+
+        setOptimizing(false);
+        setShowModal(true);
+      };
+
+      doOptimize();
+      return currentCoords; // keep state unchanged until async updates
+    });
   };
 
   // ─── Save to Supabase ───────────────────────────────────────────────────
@@ -271,7 +475,7 @@ export default function LiveRunScreen({ navigation }) {
         distance_mi: dist,
         duration_seconds: dur,
         pace_per_mile_seconds: pace,
-        elevation_ft: 0,
+        elevation_ft: Math.round(elevationGainRef.current),
         notes: notes.trim() || null,
       });
 
@@ -319,27 +523,34 @@ export default function LiveRunScreen({ navigation }) {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
 
-      {/* TOP — Live Stats Bar */}
+      {/* TOP — Live Stats Bar (4 stats with elevation) */}
       <View style={styles.statsBar}>
         <View style={styles.statCard}>
           <Text style={styles.statValue}>{distance.toFixed(2)}</Text>
           <Text style={styles.statUnit}>mi</Text>
           <Text style={styles.statLabel}>DISTANCE</Text>
         </View>
-        <View style={[styles.statCard, styles.statCardCenter]}>
+        <View style={[styles.statCard, styles.statCardBorder]}>
           <Text style={styles.statValue}>{formatPace(currentPace > 0 ? currentPace : avgPaceSeconds)}</Text>
           <Text style={styles.statUnit}>/mi</Text>
           <Text style={styles.statLabel}>PACE</Text>
         </View>
-        <View style={styles.statCard}>
+        <View style={[styles.statCard, styles.statCardBorder]}>
           <Text style={styles.statValue}>{formatTime(elapsed)}</Text>
           <Text style={styles.statUnit}> </Text>
           <Text style={styles.statLabel}>TIME</Text>
+        </View>
+        {/* UPGRADE 1: Elevation gain stat */}
+        <View style={[styles.statCard, styles.statCardBorder]}>
+          <Text style={styles.statValue}>↑{Math.round(elevationGain)}</Text>
+          <Text style={styles.statUnit}>ft</Text>
+          <Text style={styles.statLabel}>ELEV</Text>
         </View>
       </View>
 
       {/* MIDDLE — Map */}
       <View style={styles.mapContainer}>
+        {/* UPGRADE 4: Dark map style applied via customMapStyle */}
         <MapView
           style={styles.map}
           provider={PROVIDER_GOOGLE}
@@ -350,7 +561,7 @@ export default function LiveRunScreen({ navigation }) {
           showsCompass={false}
           showsScale={false}
           toolbarEnabled={false}
-          customMapStyle={darkMapStyle}
+          customMapStyle={DARK_MAP_STYLE}
         >
           {coords.length > 1 && (
             <Polyline
@@ -377,6 +588,14 @@ export default function LiveRunScreen({ navigation }) {
         {status === 'paused' && (
           <View style={styles.pausedBadge}>
             <Text style={styles.pausedBadgeText}>⏸ PAUSED</Text>
+          </View>
+        )}
+
+        {/* UPGRADE 2: Optimizing route overlay */}
+        {optimizing && (
+          <View style={styles.optimizingOverlay}>
+            <ActivityIndicator size="small" color="#C9A84C" />
+            <Text style={styles.optimizingText}>Optimizing route...</Text>
           </View>
         )}
       </View>
@@ -436,6 +655,17 @@ export default function LiveRunScreen({ navigation }) {
           <ScrollView contentContainerStyle={styles.modalContent}>
             <Text style={styles.modalTitle}>🏁 RUN COMPLETE</Text>
 
+            {/* UPGRADE 5: Static map route preview thumbnail */}
+            {staticMapUrl ? (
+              <View style={styles.routePreviewContainer}>
+                <Image
+                  source={{ uri: staticMapUrl }}
+                  style={styles.routePreviewImage}
+                  resizeMode="cover"
+                />
+              </View>
+            ) : null}
+
             {/* Summary */}
             <View style={styles.summaryRow}>
               <View style={styles.summaryItem}>
@@ -452,6 +682,11 @@ export default function LiveRunScreen({ navigation }) {
                 </Text>
                 <Text style={styles.summaryLabel}>AVG PACE</Text>
               </View>
+              {/* UPGRADE 1: Show elevation gain in summary */}
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryValue}>↑{Math.round(elevationGain)}</Text>
+                <Text style={styles.summaryLabel}>ELEV FT</Text>
+              </View>
             </View>
 
             {/* Splits list */}
@@ -466,6 +701,16 @@ export default function LiveRunScreen({ navigation }) {
                 ))}
               </View>
             )}
+
+            {/* UPGRADE 3: Auto-named run title (editable) */}
+            <Text style={styles.fieldLabel}>RUN NAME</Text>
+            <TextInput
+              style={styles.runNameInput}
+              value={runName}
+              onChangeText={setRunName}
+              placeholder="Name your run..."
+              placeholderTextColor="#555"
+            />
 
             {/* Run type picker */}
             <Text style={styles.fieldLabel}>RUN TYPE</Text>
@@ -516,23 +761,6 @@ export default function LiveRunScreen({ navigation }) {
   );
 }
 
-// ─── Dark map style ─────────────────────────────────────────────────────────
-
-const darkMapStyle = [
-  { elementType: 'geometry', stylers: [{ color: '#1a1a1a' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#746855' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#242f3e' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#38414e' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#212a37' }] },
-  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#9ca5b3' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#746855' }] },
-  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#1f2835' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#17263c' }] },
-  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#515c6d' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-];
-
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -541,7 +769,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0a0a0a',
   },
 
-  // Stats bar
+  // Stats bar — now 4 columns
   statsBar: {
     flexDirection: 'row',
     backgroundColor: '#111111',
@@ -555,26 +783,25 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
-  statCardCenter: {
+  statCardBorder: {
     borderLeftWidth: 1,
-    borderRightWidth: 1,
     borderColor: '#2a2a2a',
   },
   statValue: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '800',
     color: '#C9A84C',
-    lineHeight: 30,
+    lineHeight: 26,
   },
   statUnit: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#666',
     marginBottom: 2,
   },
   statLabel: {
-    fontSize: 9,
+    fontSize: 8,
     color: '#555',
-    letterSpacing: 1.5,
+    letterSpacing: 1.2,
     fontWeight: '700',
   },
 
@@ -634,6 +861,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 12,
     letterSpacing: 1,
+  },
+  // UPGRADE 2: Optimizing overlay
+  optimizingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(10,10,10,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  optimizingText: {
+    color: '#C9A84C',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 1.5,
   },
 
   // Bottom controls
@@ -729,7 +974,21 @@ const styles = StyleSheet.create({
     color: '#C9A84C',
     letterSpacing: 2,
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
+  },
+
+  // UPGRADE 5: Route preview thumbnail
+  routePreviewContainer: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  routePreviewImage: {
+    width: '100%',
+    height: 160,
+    backgroundColor: '#111',
   },
 
   // Summary
@@ -747,15 +1006,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   summaryValue: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '800',
     color: '#C9A84C',
     marginBottom: 4,
   },
   summaryLabel: {
-    fontSize: 9,
+    fontSize: 8,
     color: '#555',
-    letterSpacing: 1.5,
+    letterSpacing: 1.2,
     fontWeight: '700',
   },
 
@@ -791,6 +1050,20 @@ const styles = StyleSheet.create({
     color: '#C9A84C',
     fontSize: 14,
     fontWeight: '700',
+  },
+
+  // UPGRADE 3: Run name input
+  runNameInput: {
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#C9A84C44',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#fff',
+    fontSize: 15,
+    marginBottom: 20,
+    fontWeight: '600',
   },
 
   // Type chips
