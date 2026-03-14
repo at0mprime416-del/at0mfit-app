@@ -19,9 +19,13 @@ import Card from '../components/Card';
 import GoldButton from '../components/GoldButton';
 import { supabase } from '../lib/supabase';
 
-const TABS = ['GLOBAL', 'TEAMS', 'FIND TEAM 🔍'];
+const TABS = ['GLOBAL', 'TEAMS', 'FIND TEAM 🔍', 'COMPETITIONS'];
 const SPORT_FILTERS = ['All', 'Running', 'Lifting', 'CrossFit', 'Mixed'];
 const SPORT_FOCUSES = ['General', 'Running', 'Lifting', 'CrossFit', 'Mixed', 'Combat Sports'];
+const COMP_TYPES = ['Run Race', 'Lifting Challenge', 'Total Volume'];
+const RUN_DISTANCES = ['1mi', '5K', '10K', 'Custom'];
+const TIME_WINDOWS = ['1 day', '1 week', '2 weeks'];
+const VISIBILITY_OPTS = ['Public', 'Team Only'];
 
 // ─── Rank Row Components ────────────────────────────────────────────────────
 
@@ -154,6 +158,25 @@ export default function LeaderboardScreen() {
   const [joinLocation, setJoinLocation] = useState('');
   const [joinSubmitting, setJoinSubmitting] = useState(false);
 
+  // Competition state
+  const [compModalVisible, setCompModalVisible] = useState(false);
+  const [compType, setCompType] = useState('Run Race');
+  const [compRunDist, setCompRunDist] = useState('5K');
+  const [compCustomDist, setCompCustomDist] = useState('');
+  const [compExercise, setCompExercise] = useState('');
+  const [compWindow, setCompWindow] = useState('1 week');
+  const [compVisibility, setCompVisibility] = useState('Public');
+  const [compCreating, setCompCreating] = useState(false);
+  const [activeComps, setActiveComps] = useState([]);
+  const [compsLoading, setCompsLoading] = useState(false);
+  const [resultModalVisible, setResultModalVisible] = useState(false);
+  const [selectedComp, setSelectedComp] = useState(null);
+  const [resultValue, setResultValue] = useState('');
+  const [resultUnit, setResultUnit] = useState('');
+  const [compResults, setCompResults] = useState([]);
+  const [resultSubmitting, setResultSubmitting] = useState(false);
+  const [sharedCompCard, setSharedCompCard] = useState(null);
+
   // Management Modal
   const [manageModalVisible, setManageModalVisible] = useState(false);
   const [manageTeam, setManageTeam] = useState(null);
@@ -210,6 +233,27 @@ export default function LeaderboardScreen() {
     setLoading(false);
   }, []);
 
+  const loadCompetitions = useCallback(async () => {
+    setCompsLoading(true);
+    const { data } = await supabase
+      .from('events')
+      .select('*')
+      .eq('event_type', 'open_competition')
+      .in('status', ['upcoming', 'active'])
+      .order('event_date');
+    setActiveComps(data || []);
+    setCompsLoading(false);
+  }, []);
+
+  const loadCompResults = useCallback(async (eventId) => {
+    const { data } = await supabase
+      .from('event_registrations')
+      .select('*, profiles(name)')
+      .eq('event_id', eventId)
+      .order('result_value', { ascending: true });
+    setCompResults(data || []);
+  }, []);
+
   const loadOpenTeams = useCallback(async () => {
     setFindLoading(true);
     const { data } = await supabase
@@ -225,12 +269,14 @@ export default function LeaderboardScreen() {
 
   useEffect(() => {
     if (activeTab === 'FIND TEAM 🔍') loadOpenTeams();
-  }, [activeTab, loadOpenTeams]);
+    if (activeTab === 'COMPETITIONS') loadCompetitions();
+  }, [activeTab, loadOpenTeams, loadCompetitions]);
 
   const onRefresh = async () => {
     setRefreshing(true);
     await loadData();
     if (activeTab === 'FIND TEAM 🔍') await loadOpenTeams();
+    if (activeTab === 'COMPETITIONS') await loadCompetitions();
     setRefreshing(false);
   };
 
@@ -307,6 +353,90 @@ export default function LeaderboardScreen() {
     setCreateSport('General'); setCreateMaxMembers('10');
     Alert.alert('Team created! 🏆', `Welcome to ${newTeam.name}`);
     loadData();
+  };
+
+  // ── Competition ───────────────────────────────────────────────────────────
+
+  const buildCompTitle = () => {
+    if (compType === 'Run Race') {
+      const dist = compRunDist === 'Custom' ? (compCustomDist || 'Run') : compRunDist;
+      return `${dist} Race`;
+    }
+    if (compType === 'Lifting Challenge') return `${compExercise || 'Lifting'} Challenge`;
+    return `Total Volume Challenge`;
+  };
+
+  const getWindowEnd = () => {
+    const d = new Date();
+    if (compWindow === '1 day') d.setDate(d.getDate() + 1);
+    else if (compWindow === '1 week') d.setDate(d.getDate() + 7);
+    else if (compWindow === '2 weeks') d.setDate(d.getDate() + 14);
+    return d.toISOString();
+  };
+
+  const createCompetition = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setCompCreating(true);
+
+    const title = buildCompTitle();
+    const endDate = getWindowEnd();
+
+    const { data: newEvent, error } = await supabase.from('events').insert({
+      title,
+      event_type: 'open_competition',
+      host_type: 'team',
+      host_id: myTeam?.team_id || user.id, // fallback to user id
+      hosted_by: user.id,
+      event_date: endDate,
+      is_public: compVisibility === 'Public',
+      status: 'active',
+      description: compType === 'Lifting Challenge' ? `Exercise: ${compExercise}` : null,
+      distance_miles: compType === 'Run Race' && compRunDist !== 'Custom'
+        ? { '1mi': 1.0, '5K': 3.1, '10K': 6.2 }[compRunDist]
+        : compType === 'Run Race' && compCustomDist
+          ? parseFloat(compCustomDist)
+          : null,
+    }).select().single();
+
+    setCompCreating(false);
+    if (error) { Alert.alert('Error', error.message); return; }
+
+    setCompModalVisible(false);
+    setSharedCompCard({ ...newEvent, title });
+    setActiveTab('COMPETITIONS');
+    loadCompetitions();
+    Alert.alert(
+      'Competition Live! ⚔️',
+      `"${title}" is now active. ${compVisibility === 'Public' ? 'Anyone can join.' : 'Team members only.'}`
+    );
+  };
+
+  const openResultModal = async (comp) => {
+    setSelectedComp(comp);
+    const unit = comp.distance_miles ? 'seconds' : 'reps/lbs';
+    setResultUnit(unit);
+    setResultValue('');
+    setResultModalVisible(true);
+    await loadCompResults(comp.id);
+  };
+
+  const submitResult = async () => {
+    if (!resultValue.trim()) { Alert.alert('Required', 'Enter your result.'); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    setResultSubmitting(true);
+
+    const { error } = await supabase.from('event_registrations').upsert({
+      event_id: selectedComp.id,
+      user_id: user.id,
+      result_value: parseFloat(resultValue),
+      result_unit: resultUnit,
+    }, { onConflict: 'event_id,user_id' });
+
+    setResultSubmitting(false);
+    if (error) { Alert.alert('Error', error.message); return; }
+    Alert.alert('Result submitted! ✅', 'Your result has been recorded.');
+    await loadCompResults(selectedComp.id);
   };
 
   const leaveTeam = () => {
@@ -590,6 +720,13 @@ export default function LeaderboardScreen() {
         </>
       )}
 
+      {/* START COMPETITION button (visible on GLOBAL + TEAMS tabs) */}
+      {(activeTab === 'GLOBAL' || activeTab === 'TEAMS') && (
+        <TouchableOpacity style={styles.startCompBtn} onPress={() => setCompModalVisible(true)}>
+          <Text style={styles.startCompBtnText}>⚔️  START COMPETITION</Text>
+        </TouchableOpacity>
+      )}
+
       {/* ── GLOBAL TAB ── */}
       {activeTab === 'GLOBAL' && (
         <>
@@ -738,7 +875,266 @@ export default function LeaderboardScreen() {
         </>
       )}
 
+      {/* ── COMPETITIONS TAB ── */}
+      {activeTab === 'COMPETITIONS' && (
+        <>
+          <View style={styles.compHeader}>
+            <Text style={styles.sectionLabel}>OPEN COMPETITIONS</Text>
+            <TouchableOpacity style={styles.newCompBtn} onPress={() => setCompModalVisible(true)}>
+              <Text style={styles.newCompBtnText}>+ NEW</Text>
+            </TouchableOpacity>
+          </View>
+
+          {compsLoading ? (
+            <ActivityIndicator color={colors.gold} style={{ marginVertical: 30 }} />
+          ) : activeComps.length === 0 ? (
+            <Card style={styles.emptyCard}>
+              <Text style={styles.emptyText}>No active competitions. Start one!</Text>
+            </Card>
+          ) : (
+            activeComps.map((comp) => {
+              const isHost = comp.hosted_by === currentUserId;
+              const endDate = new Date(comp.event_date);
+              const now = new Date();
+              const diff = endDate - now;
+              const daysLeft = diff > 0 ? Math.ceil(diff / (1000 * 60 * 60 * 24)) : 0;
+              return (
+                <View key={comp.id} style={styles.compCard}>
+                  <View style={styles.compCardTop}>
+                    <Text style={styles.compCardTitle}>⚔️  {comp.title}</Text>
+                    <View style={[styles.compStatusBadge, comp.status === 'active' && styles.compActive]}>
+                      <Text style={styles.compStatusText}>{comp.status.toUpperCase()}</Text>
+                    </View>
+                  </View>
+                  {comp.description && (
+                    <Text style={styles.compCardDesc}>{comp.description}</Text>
+                  )}
+                  <Text style={styles.compCardMeta}>
+                    {daysLeft > 0 ? `Ends in ${daysLeft}d` : 'Ended'} · {comp.is_public ? '🌐 Public' : '🔒 Private'}
+                    {comp.distance_miles ? ` · ${comp.distance_miles} mi` : ''}
+                  </Text>
+                  <View style={styles.compActions}>
+                    <TouchableOpacity
+                      style={styles.submitResultBtn}
+                      onPress={() => openResultModal(comp)}
+                    >
+                      <Text style={styles.submitResultBtnText}>📊 RESULTS / SUBMIT</Text>
+                    </TouchableOpacity>
+                    {isHost && (
+                      <View style={styles.hostTag}>
+                        <Text style={styles.hostTagText}>HOST</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </>
+      )}
+
       <View style={{ height: 40 }} />
+
+      {/* ── START COMPETITION MODAL ── */}
+      <Modal
+        visible={compModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setCompModalVisible(false)}
+      >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={styles.modalContainer} keyboardShouldPersistTaps="handled">
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>⚔️  START COMPETITION</Text>
+              <TouchableOpacity onPress={() => setCompModalVisible(false)}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Step 1: Type */}
+            <Text style={styles.formLabel}>COMPETITION TYPE</Text>
+            <View style={[styles.chipRow, { marginBottom: 14 }]}>
+              {COMP_TYPES.map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.chip, compType === t && styles.chipActive]}
+                  onPress={() => setCompType(t)}
+                >
+                  <Text style={[styles.chipText, compType === t && styles.chipTextActive]}>{t}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Step 2: Parameters */}
+            {compType === 'Run Race' && (
+              <>
+                <Text style={styles.formLabel}>DISTANCE</Text>
+                <View style={[styles.chipRow, { marginBottom: 14 }]}>
+                  {RUN_DISTANCES.map((d) => (
+                    <TouchableOpacity
+                      key={d}
+                      style={[styles.chip, compRunDist === d && styles.chipActive]}
+                      onPress={() => setCompRunDist(d)}
+                    >
+                      <Text style={[styles.chipText, compRunDist === d && styles.chipTextActive]}>{d}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {compRunDist === 'Custom' && (
+                  <TextInput
+                    style={[styles.teamInput, { marginBottom: 14 }]}
+                    value={compCustomDist}
+                    onChangeText={setCompCustomDist}
+                    placeholder="Distance in miles (e.g. 13.1)"
+                    placeholderTextColor={colors.muted}
+                    keyboardType="numeric"
+                  />
+                )}
+              </>
+            )}
+
+            {compType === 'Lifting Challenge' && (
+              <>
+                <Text style={styles.formLabel}>EXERCISE</Text>
+                <TextInput
+                  style={[styles.teamInput, { marginBottom: 14 }]}
+                  value={compExercise}
+                  onChangeText={setCompExercise}
+                  placeholder="e.g. Deadlift, Bench Press..."
+                  placeholderTextColor={colors.muted}
+                />
+              </>
+            )}
+
+            <Text style={styles.formLabel}>TIME WINDOW</Text>
+            <View style={[styles.chipRow, { marginBottom: 14 }]}>
+              {TIME_WINDOWS.map((w) => (
+                <TouchableOpacity
+                  key={w}
+                  style={[styles.chip, compWindow === w && styles.chipActive]}
+                  onPress={() => setCompWindow(w)}
+                >
+                  <Text style={[styles.chipText, compWindow === w && styles.chipTextActive]}>{w}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Step 3: Visibility */}
+            <Text style={styles.formLabel}>VISIBILITY</Text>
+            <View style={[styles.chipRow, { marginBottom: 20 }]}>
+              {VISIBILITY_OPTS.map((v) => (
+                <TouchableOpacity
+                  key={v}
+                  style={[styles.chip, compVisibility === v && styles.chipActive]}
+                  onPress={() => setCompVisibility(v)}
+                >
+                  <Text style={[styles.chipText, compVisibility === v && styles.chipTextActive]}>
+                    {v === 'Public' ? '🌐 Public' : '🔒 Team Only'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Preview title */}
+            <Card style={{ marginBottom: 16 }}>
+              <Text style={[styles.formLabel, { marginTop: 0 }]}>COMPETITION PREVIEW</Text>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.gold }}>
+                ⚔️  {buildCompTitle()}
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>
+                Duration: {compWindow} · {compVisibility}
+              </Text>
+            </Card>
+
+            <GoldButton
+              title="LAUNCH COMPETITION"
+              onPress={createCompetition}
+              loading={compCreating}
+            />
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setCompModalVisible(false)}
+            >
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+            <View style={{ height: 20 }} />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── RESULT MODAL ── */}
+      <Modal
+        visible={resultModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setResultModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={styles.modalContainer} keyboardShouldPersistTaps="handled">
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>RESULTS</Text>
+              <TouchableOpacity onPress={() => setResultModalVisible(false)}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {selectedComp && (
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 16 }}>
+                {selectedComp.title}
+              </Text>
+            )}
+
+            {/* Submit result */}
+            <Text style={styles.formLabel}>SUBMIT YOUR RESULT</Text>
+            <View style={styles.resultInputRow}>
+              <TextInput
+                style={[styles.teamInput, { flex: 1 }]}
+                value={resultValue}
+                onChangeText={setResultValue}
+                placeholder={
+                  selectedComp?.distance_miles
+                    ? 'Time in seconds (e.g. 1245)'
+                    : 'Weight in lbs or reps'
+                }
+                placeholderTextColor={colors.muted}
+                keyboardType="numeric"
+              />
+              <TextInput
+                style={[styles.teamInput, { width: 80, marginLeft: 8, textAlign: 'center' }]}
+                value={resultUnit}
+                onChangeText={setResultUnit}
+                placeholder="unit"
+                placeholderTextColor={colors.muted}
+              />
+            </View>
+            <GoldButton
+              title="SUBMIT RESULT"
+              onPress={submitResult}
+              loading={resultSubmitting}
+              style={{ marginTop: 12, marginBottom: 20 }}
+            />
+
+            {/* Leaderboard */}
+            <Text style={styles.sectionLabel}>LEADERBOARD</Text>
+            {compResults.length === 0 ? (
+              <Text style={[styles.emptyText, { marginBottom: 20 }]}>No results yet. Be the first!</Text>
+            ) : (
+              compResults.map((r, i) => (
+                <View key={r.id} style={styles.resultRow}>
+                  <Text style={[styles.rankNum, i < 3 && styles.rankNumTop]}>{i + 1}</Text>
+                  <Text style={[styles.rankName, { flex: 1, marginLeft: 8 }]}>
+                    {r.profiles?.name || 'Anonymous'}
+                  </Text>
+                  <Text style={styles.rankTokens}>
+                    {r.result_value} {r.result_unit || ''}
+                  </Text>
+                </View>
+              ))
+            )}
+            <View style={{ height: 20 }} />
+          </ScrollView>
+        </View>
+      </Modal>
 
       {/* ── JOIN REQUEST MODAL ── */}
       <Modal
@@ -1157,6 +1553,85 @@ const styles = StyleSheet.create({
   modalClose: { fontSize: 18, color: colors.muted, paddingHorizontal: 4 },
   cancelBtn: { marginTop: 12, alignItems: 'center', paddingVertical: 10 },
   cancelBtnText: { color: colors.muted, fontSize: 14, fontWeight: '600' },
+
+  // Competition
+  startCompBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    backgroundColor: 'rgba(201,168,76,0.1)',
+    marginBottom: 18,
+  },
+  startCompBtnText: { color: colors.gold, fontSize: 14, fontWeight: '800', letterSpacing: 1 },
+
+  compHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  newCompBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    backgroundColor: 'rgba(201,168,76,0.1)',
+  },
+  newCompBtnText: { color: colors.gold, fontSize: 11, fontWeight: '700' },
+
+  compCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    marginBottom: 12,
+  },
+  compCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
+  compCardTitle: { fontSize: 16, fontWeight: '700', color: colors.text, flex: 1 },
+  compCardDesc: { fontSize: 13, color: colors.muted, marginBottom: 6 },
+  compCardMeta: { fontSize: 12, color: colors.muted, marginBottom: 10 },
+  compStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  compActive: {
+    borderColor: '#4CC970',
+    backgroundColor: 'rgba(76,201,112,0.1)',
+  },
+  compStatusText: { color: '#fff', fontSize: 9, fontWeight: '700' },
+  compActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  submitResultBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    backgroundColor: 'rgba(201,168,76,0.1)',
+  },
+  submitResultBtnText: { color: colors.gold, fontSize: 12, fontWeight: '700' },
+  hostTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(201,168,76,0.15)',
+    borderWidth: 1,
+    borderColor: colors.gold,
+  },
+  hostTagText: { color: colors.gold, fontSize: 10, fontWeight: '700' },
+
+  resultInputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
 
   // Pending request cards in manage modal
   pendingReqCard: {

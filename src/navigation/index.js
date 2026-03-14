@@ -20,9 +20,13 @@ import NutritionScreen from '../screens/NutritionScreen';
 import LeaderboardScreen from '../screens/LeaderboardScreen';
 import AIWorkoutScreen from '../screens/AIWorkoutScreen';
 import LiveRunScreen from '../screens/LiveRunScreen';
+import GymScreen from '../screens/GymScreen';
+import EventsScreen from '../screens/EventsScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
+
+// ─── Shared screen options ────────────────────────────────────────────────────
 
 const screenOptions = {
   headerStyle: {
@@ -49,27 +53,101 @@ function TabIcon({ emoji, focused }) {
   );
 }
 
-// Split into two tab groups to avoid overcrowding:
-// Main: Home | Workout | Run | Progress | Profile
-// More: Calendar | Nutrition | Compete
-// We'll just fit all 8 with smaller labels for now
+// ─── Nested: Train (Workout · Run · AI · Progress) ────────────────────────────
+
+const TrainStack = createStackNavigator();
+function TrainNavigator() {
+  return (
+    <TrainStack.Navigator screenOptions={screenOptions}>
+      <TrainStack.Screen
+        name="Workout"
+        component={WorkoutScreen}
+        options={{ title: 'LOG WORKOUT' }}
+      />
+      <TrainStack.Screen
+        name="Run"
+        component={RunScreen}
+        options={{ title: 'RUN LOG' }}
+      />
+      <TrainStack.Screen
+        name="AIWorkout"
+        component={AIWorkoutScreen}
+        options={{ title: '⚛ AI COACH' }}
+      />
+      <TrainStack.Screen
+        name="Progress"
+        component={ProgressScreen}
+        options={{ title: 'PROGRESS' }}
+      />
+    </TrainStack.Navigator>
+  );
+}
+
+// ─── Nested: Compete (Leaderboard · Events) ───────────────────────────────────
+
+const CompeteStack = createStackNavigator();
+function CompeteNavigator() {
+  return (
+    <CompeteStack.Navigator screenOptions={screenOptions}>
+      <CompeteStack.Screen
+        name="Leaderboard"
+        component={LeaderboardScreen}
+        options={{ title: 'COMPETE' }}
+      />
+      <CompeteStack.Screen
+        name="Events"
+        component={EventsScreen}
+        options={{ title: 'EVENTS' }}
+      />
+    </CompeteStack.Navigator>
+  );
+}
+
+// ─── Nested: Community (Gym · Calendar · Nutrition) ──────────────────────────
+
+const CommunityStack = createStackNavigator();
+function CommunityNavigator() {
+  return (
+    <CommunityStack.Navigator screenOptions={screenOptions}>
+      <CommunityStack.Screen
+        name="Gym"
+        component={GymScreen}
+        options={{ title: 'GYM' }}
+      />
+      <CommunityStack.Screen
+        name="Calendar"
+        component={CalendarScreen}
+        options={{ title: 'CALENDAR' }}
+      />
+      <CommunityStack.Screen
+        name="Nutrition"
+        component={NutritionScreen}
+        options={{ title: 'NUTRITION' }}
+      />
+    </CommunityStack.Navigator>
+  );
+}
+
+// ─── Main Tab Navigator (5 tabs) ──────────────────────────────────────────────
+
 function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={{
         ...screenOptions,
+        headerShown: false, // each nested stack handles its own header
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 60,
+          height: 62,
           paddingBottom: 8,
         },
         tabBarActiveTintColor: colors.gold,
         tabBarInactiveTintColor: colors.muted,
         tabBarLabelStyle: {
-          fontSize: 9,
-          fontWeight: '600',
+          fontSize: 10,
+          fontWeight: '700',
           letterSpacing: 0.3,
         },
       }}
@@ -78,69 +156,41 @@ function MainTabs() {
         name="Home"
         component={HomeScreen}
         options={{
+          headerShown: true,
           title: 'AT0M FIT',
           tabBarLabel: 'Home',
           tabBarIcon: ({ focused }) => <TabIcon emoji="🏠" focused={focused} />,
         }}
       />
       <Tab.Screen
-        name="Workout"
-        component={WorkoutScreen}
+        name="Train"
+        component={TrainNavigator}
         options={{
-          title: 'LOG WORKOUT',
-          tabBarLabel: 'Workout',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🏋️" focused={focused} />,
-        }}
-      />
-      <Tab.Screen
-        name="Run"
-        component={RunScreen}
-        options={{
-          title: 'RUN LOG',
-          tabBarLabel: 'Run',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🏃" focused={focused} />,
-        }}
-      />
-      <Tab.Screen
-        name="Nutrition"
-        component={NutritionScreen}
-        options={{
-          title: 'NUTRITION',
-          tabBarLabel: 'Nutrition',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🥗" focused={focused} />,
-        }}
-      />
-      <Tab.Screen
-        name="Progress"
-        component={ProgressScreen}
-        options={{
-          title: 'PROGRESS',
-          tabBarLabel: 'Progress',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="📈" focused={focused} />,
+          tabBarLabel: 'Train',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="💪" focused={focused} />,
         }}
       />
       <Tab.Screen
         name="Compete"
-        component={LeaderboardScreen}
+        component={CompeteNavigator}
         options={{
-          title: 'LEADERBOARD',
           tabBarLabel: 'Compete',
           tabBarIcon: ({ focused }) => <TabIcon emoji="🏆" focused={focused} />,
         }}
       />
       <Tab.Screen
-        name="Calendar"
-        component={CalendarScreen}
+        name="Community"
+        component={CommunityNavigator}
         options={{
-          title: 'CALENDAR',
-          tabBarLabel: 'Calendar',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="📅" focused={focused} />,
+          tabBarLabel: 'Community',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🏢" focused={focused} />,
         }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
         options={{
+          headerShown: true,
           title: 'PROFILE',
           tabBarLabel: 'Profile',
           tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} />,
@@ -150,16 +200,7 @@ function MainTabs() {
   );
 }
 
-// Stack to hold Calendar accessible from Home
-const HomeStack = createStackNavigator();
-function HomeStackNav() {
-  return (
-    <HomeStack.Navigator screenOptions={screenOptions}>
-      <HomeStack.Screen name="HomeMain" component={HomeScreen} options={{ title: 'AT0M FIT' }} />
-      <HomeStack.Screen name="Calendar" component={CalendarScreen} options={{ title: 'CALENDAR' }} />
-    </HomeStack.Navigator>
-  );
-}
+// ─── Root Navigator ───────────────────────────────────────────────────────────
 
 export default function RootNavigator() {
   return (
@@ -196,15 +237,6 @@ export default function RootNavigator() {
           name="Main"
           component={MainTabs}
           options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="AIWorkout"
-          component={AIWorkoutScreen}
-          options={{
-            headerShown: true,
-            title: '⚛ AI COACH',
-            headerBackTitle: 'Back',
-          }}
         />
         <Stack.Screen
           name="LiveRun"
