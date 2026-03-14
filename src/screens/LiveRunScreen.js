@@ -15,8 +15,32 @@ import {
 } from 'react-native';
 import MapView, { Polyline, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { EventEmitter } from 'events';
 import { supabase } from '../lib/supabase';
 import { colors } from '../theme/colors';
+
+// ─── Background Location Task ────────────────────────────────────────────────
+// Must be defined at module level (outside component) for expo-task-manager
+
+const LOCATION_TASK_NAME = 'at0mfit-background-location';
+const locationEventEmitter = new EventEmitter();
+locationEventEmitter.setMaxListeners(20);
+
+TaskManager.defineTask(LOCATION_TASK_NAME, ({ data, error }) => {
+  if (error) {
+    console.warn('[At0mFit] Background location error:', error.message);
+    return;
+  }
+  if (data) {
+    const { locations } = data;
+    const location = locations[0];
+    if (location) {
+      locationEventEmitter.emit('location', location);
+    }
+  }
+});
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyBYAe1iwUyAoMnZ3hIYG7P30Tb8oAiCwxM';
 
@@ -338,10 +362,22 @@ export default function LiveRunScreen({ navigation }) {
   }, []);
 
   const startTracking = async () => {
-    const { status: permStatus } = await Location.requestForegroundPermissionsAsync();
-    if (permStatus !== 'granted') {
+    // Foreground permission
+    const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+    if (fgStatus !== 'granted') {
       Alert.alert('Permission needed', 'Enable location to track runs.');
       return;
+    }
+
+    // Background permission (needed for task-based tracking)
+    const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+    if (bgStatus !== 'granted') {
+      Alert.alert(
+        'Background location needed',
+        'Please allow "Always" location access so At0m Fit can track your run when the screen locks.',
+        [{ text: 'OK' }]
+      );
+      // Still proceed — will fall back to foreground-only if task fails
     }
 
     elapsedRef.current = 0;
@@ -373,23 +409,67 @@ export default function LiveRunScreen({ navigation }) {
 
     setStatus('running');
 
-    const sub = await Location.watchPositionAsync(
-      {
+    // Keep screen awake while running
+    activateKeepAwakeAsync();
+
+    // Stop any existing background task before starting fresh
+    try {
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+      if (isRunning) {
+        await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+      }
+    } catch (_) {}
+
+    // Start background location task
+    try {
+      await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
         accuracy: Location.Accuracy.BestForNavigation,
         timeInterval: 2000,
         distanceInterval: 5,
-      },
-      handleNewLocation
-    );
+        showsBackgroundLocationIndicator: true,
+        foregroundService: {
+          notificationTitle: 'At0m Fit — Run Active',
+          notificationBody: 'Tracking your run...',
+          notificationColor: '#C9A84C',
+        },
+      });
 
-    locationSubscription.current = sub;
+      // Listen for location events from background task
+      locationEventEmitter.on('location', handleNewLocation);
+      locationSubscription.current = { type: 'background' };
+    } catch (err) {
+      console.warn('[At0mFit] Background task failed, falling back to foreground:', err.message);
+      // Fallback to foreground watchPositionAsync
+      const sub = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 2000,
+          distanceInterval: 5,
+        },
+        handleNewLocation
+      );
+      locationSubscription.current = sub;
+    }
   };
 
-  const pauseTracking = () => {
-    if (locationSubscription.current) {
+  const pauseTracking = async () => {
+    // Stop background task
+    try {
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+      if (isRunning) {
+        await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+      }
+    } catch (_) {}
+
+    // Remove foreground subscription (fallback path)
+    if (locationSubscription.current && locationSubscription.current.remove) {
       locationSubscription.current.remove();
-      locationSubscription.current = null;
     }
+    locationEventEmitter.removeAllListeners('location');
+    locationSubscription.current = null;
+
+    // Allow screen to sleep while paused
+    deactivateKeepAwake();
     setStatus('paused');
   };
 
