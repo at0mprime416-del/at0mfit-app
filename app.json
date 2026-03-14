@@ -11,7 +11,8 @@
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "At0m Fit uses your location to track runs.",
-          "locationWhenInUsePermission": "At0m Fit uses your location to track runs."
+          "locationWhenInUsePermission": "At0m Fit uses your location to track runs.",
+          "locationAlwaysPermission": "At0m Fit tracks your run in the background so you can lock your screen."
         }
       ]
     ],
@@ -23,7 +24,9 @@
       },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "At0m Fit uses your location to track runs.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "At0m Fit uses your location to track runs."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "At0m Fit uses your location to track runs.",
+        "NSLocationAlwaysUsageDescription": "At0m Fit tracks your location in the background during runs.",
+        "UIBackgroundModes": ["location"]
       }
     },
     "android": {
@@ -36,7 +39,7 @@
           "apiKey": "AIzaSyBYAe1iwUyAoMnZ3hIYG7P30Tb8oAiCwxM"
         }
       },
-      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"]
     },
     "owner": "at0mprime",
     "extra": {

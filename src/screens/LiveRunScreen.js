@@ -260,12 +260,25 @@ export default function LiveRunScreen({ navigation }) {
 
   useEffect(() => {
     return () => {
-      if (locationSubscription.current) {
+      // Stop background task
+      Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME)
+        .then((isRunning) => {
+          if (isRunning) Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+        })
+        .catch(() => {});
+
+      // Remove foreground subscription (fallback path)
+      if (locationSubscription.current && locationSubscription.current.remove) {
         locationSubscription.current.remove();
       }
+      locationEventEmitter.removeAllListeners('location');
+
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+
+      // Ensure keep-awake is released
+      deactivateKeepAwake();
     };
   }, []);
 
@@ -475,22 +488,64 @@ export default function LiveRunScreen({ navigation }) {
 
   const resumeTracking = async () => {
     setStatus('running');
-    const sub = await Location.watchPositionAsync(
-      {
+
+    // Re-activate keep-awake
+    activateKeepAwakeAsync();
+
+    // Restart background location task
+    try {
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+      if (isRunning) {
+        await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+      }
+
+      await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
         accuracy: Location.Accuracy.BestForNavigation,
         timeInterval: 2000,
         distanceInterval: 5,
-      },
-      handleNewLocation
-    );
-    locationSubscription.current = sub;
+        showsBackgroundLocationIndicator: true,
+        foregroundService: {
+          notificationTitle: 'At0m Fit — Run Active',
+          notificationBody: 'Tracking your run...',
+          notificationColor: '#C9A84C',
+        },
+      });
+
+      locationEventEmitter.on('location', handleNewLocation);
+      locationSubscription.current = { type: 'background' };
+    } catch (err) {
+      console.warn('[At0mFit] Background task failed on resume, falling back:', err.message);
+      const sub = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 2000,
+          distanceInterval: 5,
+        },
+        handleNewLocation
+      );
+      locationSubscription.current = sub;
+    }
   };
 
   const finishRun = async () => {
-    if (locationSubscription.current) {
+    // Stop background location task
+    try {
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+      if (isRunning) {
+        await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+      }
+    } catch (_) {}
+
+    // Remove foreground subscription (fallback path)
+    if (locationSubscription.current && locationSubscription.current.remove) {
       locationSubscription.current.remove();
-      locationSubscription.current = null;
     }
+    locationEventEmitter.removeAllListeners('location');
+    locationSubscription.current = null;
+
+    // Deactivate keep-awake
+    deactivateKeepAwake();
+
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
