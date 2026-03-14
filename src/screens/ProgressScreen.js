@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
+import Svg, { Polyline, Circle, Line } from 'react-native-svg';
 import { colors } from '../theme/colors';
 import Card from '../components/Card';
 import GoldButton from '../components/GoldButton';
@@ -16,7 +17,7 @@ import { supabase } from '../lib/supabase';
 
 const { width } = Dimensions.get('window');
 
-// BarChart — no charting lib
+// ── BarChart ────────────────────────────────────────────────────────────────
 function BarChart({ data, maxValue, barColor, height = 100 }) {
   const chartWidth = width - 80;
   const barWidth = Math.max((chartWidth / data.length) - 8, 10);
@@ -48,75 +49,71 @@ function BarChart({ data, maxValue, barColor, height = 100 }) {
   );
 }
 
-// Simple weight line chart using positioned views
+// ── SVG Weight Line Chart ────────────────────────────────────────────────────
 function WeightLineChart({ data }) {
   if (!data || data.length === 0) return null;
+
   const chartW = width - 96;
   const chartH = 100;
+  const padH = 10;
   const values = data.map((d) => d.weight);
   const minW = Math.min(...values);
   const maxW = Math.max(...values);
   const range = maxW - minW || 1;
 
-  // Map each data point to x, y
   const points = data.map((d, i) => ({
     x: data.length > 1 ? (i / (data.length - 1)) * chartW : chartW / 2,
-    y: chartH - ((d.weight - minW) / range) * chartH,
+    y: padH + (chartH - padH * 2) - ((d.weight - minW) / range) * (chartH - padH * 2),
   }));
+
+  const polylinePoints = points.map((p) => `${p.x},${p.y}`).join(' ');
 
   return (
     <View>
-      <View style={{ height: chartH + 24, position: 'relative', marginHorizontal: 8 }}>
-        {/* Lines between dots */}
-        {points.slice(0, -1).map((p, i) => {
-          const next = points[i + 1];
-          const dx = next.x - p.x;
-          const dy = next.y - p.y;
-          const lineLen = Math.sqrt(dx * dx + dy * dy);
-          const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-          return (
-            <View
-              key={i}
-              style={{
-                position: 'absolute',
-                left: p.x,
-                top: p.y + 4,
-                width: lineLen,
-                height: 2,
-                backgroundColor: colors.gold,
-                opacity: 0.5,
-                transform: [{ rotate: `${angle}deg` }],
-                transformOrigin: '0 0',
-              }}
-            />
-          );
-        })}
-        {/* Dots */}
-        {points.map((p, i) => (
-          <View
-            key={i}
-            style={{
-              position: 'absolute',
-              left: p.x - 4,
-              top: p.y,
-              width: 8,
-              height: 8,
-              borderRadius: 4,
-              backgroundColor: colors.gold,
-            }}
+      <View
+        style={{
+          backgroundColor: 'rgba(0,0,0,0.25)',
+          borderRadius: 8,
+          marginHorizontal: 8,
+          paddingBottom: 20,
+        }}
+      >
+        <Svg width={chartW} height={chartH + 20} style={{ marginLeft: 0 }}>
+          {/* baseline */}
+          <Line
+            x1={0}
+            y1={chartH}
+            x2={chartW}
+            y2={chartH}
+            stroke={colors.border}
+            strokeWidth={1}
           />
-        ))}
-        {/* X-axis labels: first, mid, last */}
-        {data.length > 0 && (
-          <>
-            <Text style={[styles.chartAxisLabel, { position: 'absolute', left: 0, top: chartH + 6 }]}>
-              {data[0].label}
-            </Text>
-            <Text style={[styles.chartAxisLabel, { position: 'absolute', left: chartW - 28, top: chartH + 6 }]}>
-              {data[data.length - 1].label}
-            </Text>
-          </>
-        )}
+          {/* polyline */}
+          {data.length > 1 && (
+            <Polyline
+              points={polylinePoints}
+              fill="none"
+              stroke={colors.gold}
+              strokeWidth={2}
+              strokeOpacity={0.85}
+            />
+          )}
+          {/* dots */}
+          {points.map((p, i) => (
+            <Circle
+              key={i}
+              cx={p.x}
+              cy={p.y}
+              r={4}
+              fill={colors.gold}
+            />
+          ))}
+        </Svg>
+        {/* X-axis labels */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 }}>
+          <Text style={styles.chartAxisLabel}>{data[0].label}</Text>
+          <Text style={styles.chartAxisLabel}>{data[data.length - 1].label}</Text>
+        </View>
       </View>
       <View style={styles.weightMinMax}>
         <Text style={styles.weightMinMaxText}>Min: {minW} lbs</Text>
@@ -126,18 +123,126 @@ function WeightLineChart({ data }) {
   );
 }
 
-const RANGE_OPTIONS = [
-  { label: '7D', days: 7 },
-  { label: '30D', days: 30 },
-  { label: '90D', days: 90 },
-];
+// ── Training Frequency Heatmap (12 weeks × 7 days) ──────────────────────────
+function FrequencyHeatmap({ workoutDays, runDays }) {
+  // Build 84-day grid ending today
+  const today = new Date();
+  const cells = [];
+  for (let i = 83; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const ds = d.toISOString().split('T')[0];
+    const hasWorkout = workoutDays.has(ds);
+    const hasRun = runDays.has(ds);
+    let color = colors.surface;
+    if (hasWorkout && hasRun) color = '#e6b84a'; // both — brighter gold
+    else if (hasWorkout) color = colors.gold;
+    else if (hasRun) color = colors.blue;
+    cells.push({ ds, color, dayOfWeek: d.getDay() });
+  }
 
+  // Split into 12 weeks
+  const weeks = [];
+  for (let w = 0; w < 12; w++) {
+    weeks.push(cells.slice(w * 7, w * 7 + 7));
+  }
+
+  // Week labels: show start date of each week
+  const getWeekLabel = (weekIdx) => {
+    const startCell = weeks[weekIdx][0];
+    const d = new Date(startCell.ds + 'T00:00:00');
+    return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  };
+
+  const CELL_SIZE = Math.floor((width - 80) / 7) - 2;
+
+  return (
+    <View>
+      {/* Legend */}
+      <View style={styles.heatmapLegend}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: colors.gold }]} />
+          <Text style={styles.legendText}>Workout</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: colors.blue }]} />
+          <Text style={styles.legendText}>Run</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]} />
+          <Text style={styles.legendText}>Rest</Text>
+        </View>
+      </View>
+
+      {/* Day of week header */}
+      <View style={styles.heatmapDowRow}>
+        <View style={styles.heatmapWeekLabel} />
+        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+          <Text key={d} style={[styles.heatmapDow, { width: CELL_SIZE + 2 }]}>{d}</Text>
+        ))}
+      </View>
+
+      {/* Grid */}
+      {weeks.map((week, wIdx) => (
+        <View key={wIdx} style={styles.heatmapRow}>
+          <Text style={styles.heatmapWeekLabel}>{getWeekLabel(wIdx)}</Text>
+          {week.map((cell, cIdx) => (
+            <View
+              key={cIdx}
+              style={[
+                styles.heatmapCell,
+                {
+                  width: CELL_SIZE,
+                  height: CELL_SIZE,
+                  backgroundColor: cell.color,
+                },
+              ]}
+            />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// ── Strength Standards ────────────────────────────────────────────────────────
+const STRENGTH_STANDARDS = {
+  squat:    { novice: 135, intermediate: 225, advanced: 315 },
+  bench:    { novice: 95,  intermediate: 185, advanced: 275 },
+  deadlift: { novice: 185, intermediate: 315, advanced: 405 },
+  default:  { novice: 95,  intermediate: 185, advanced: 275 },
+};
+
+function getStrengthLevel(exerciseName, weightLbs) {
+  const key = exerciseName.toLowerCase().includes('squat')
+    ? 'squat'
+    : exerciseName.toLowerCase().includes('bench')
+    ? 'bench'
+    : exerciseName.toLowerCase().includes('deadlift')
+    ? 'deadlift'
+    : 'default';
+
+  const standards = STRENGTH_STANDARDS[key];
+  const w = parseFloat(weightLbs) || 0;
+
+  if (w >= standards.advanced) return { label: 'ELITE', color: '#39ff14' };   // green
+  if (w >= standards.intermediate) return { label: 'ADVANCED', color: colors.gold };
+  if (w >= standards.novice) return { label: 'INTERMEDIATE', color: colors.blue };
+  return { label: 'NOVICE', color: colors.muted };
+}
+
+// ── PRRow with strength standard label ───────────────────────────────────────
 function PRRow({ name, weight, sets, reps, date }) {
+  const level = getStrengthLevel(name, weight);
+
   return (
     <View style={styles.prRow}>
       <View style={{ flex: 1 }}>
         <Text style={styles.prName}>{name}</Text>
         <Text style={styles.prDate}>{date}</Text>
+        <View style={[styles.strengthBadge, { borderColor: level.color }]}>
+          <Text style={[styles.strengthBadgeText, { color: level.color }]}>{level.label}</Text>
+        </View>
       </View>
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={styles.prWeight}>{weight} lbs</Text>
@@ -149,10 +254,25 @@ function PRRow({ name, weight, sets, reps, date }) {
   );
 }
 
+// ── Helpers ────────────────────────────────────────────────────────────────────
 function todayStr() {
   return new Date().toISOString().split('T')[0];
 }
 
+function formatPace(seconds) {
+  if (!seconds || seconds <= 0) return '—';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}/mi`;
+}
+
+const RANGE_OPTIONS = [
+  { label: '7D', days: 7 },
+  { label: '30D', days: 30 },
+  { label: '90D', days: 90 },
+];
+
+// ── Main Screen ────────────────────────────────────────────────────────────────
 export default function ProgressScreen() {
   const [weeklyData, setWeeklyData] = useState([]);
   const [prs, setPrs] = useState([]);
@@ -167,6 +287,13 @@ export default function ProgressScreen() {
   // Weekly mileage (runs)
   const [weeklyMileage, setWeeklyMileage] = useState([]);
 
+  // Heatmap
+  const [heatmapWorkoutDays, setHeatmapWorkoutDays] = useState(new Set());
+  const [heatmapRunDays, setHeatmapRunDays] = useState(new Set());
+
+  // Run records
+  const [runRecords, setRunRecords] = useState(null);
+
   const loadProgress = async (rangeDays = 7) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -178,7 +305,6 @@ export default function ProgressScreen() {
       d.setDate(d.getDate() - i);
       days.push(d.toISOString().split('T')[0]);
     }
-
     const startDate = days[0];
 
     const { data: workouts } = await supabase
@@ -187,7 +313,6 @@ export default function ProgressScreen() {
       .eq('user_id', user.id)
       .gte('date', startDate);
 
-    // Choose label granularity
     const isShort = rangeDays <= 7;
     const chartData = days
       .filter((_, i) => {
@@ -285,6 +410,51 @@ export default function ProgressScreen() {
     });
     setWeeklyMileage(mileageData);
 
+    // ── Heatmap data — last 84 days ──────────────────────────────────────────
+    const heatmapStart = new Date();
+    heatmapStart.setDate(heatmapStart.getDate() - 83);
+    const heatmapStartStr = heatmapStart.toISOString().split('T')[0];
+
+    const [{ data: hmWorkouts }, { data: hmRuns }] = await Promise.all([
+      supabase.from('workouts').select('date').eq('user_id', user.id).gte('date', heatmapStartStr),
+      supabase.from('runs').select('date').eq('user_id', user.id).gte('date', heatmapStartStr),
+    ]);
+
+    setHeatmapWorkoutDays(new Set((hmWorkouts || []).map((w) => w.date)));
+    setHeatmapRunDays(new Set((hmRuns || []).map((r) => r.date)));
+
+    // ── Run records ──────────────────────────────────────────────────────────
+    const { data: allRuns } = await supabase
+      .from('runs')
+      .select('distance_mi, pace_per_mile_seconds, elevation_ft')
+      .eq('user_id', user.id);
+
+    if (allRuns && allRuns.length > 0) {
+      let longestRun = null;
+      let bestPaceRun = null;
+      let mostElevationRun = null;
+
+      for (const r of allRuns) {
+        const dist = parseFloat(r.distance_mi) || 0;
+        const pace = r.pace_per_mile_seconds;
+        const elev = r.elevation_ft || 0;
+
+        if (dist > 0 && (longestRun === null || dist > longestRun.distance_mi)) {
+          longestRun = { ...r, distance_mi: dist };
+        }
+        if (pace && pace > 0 && (bestPaceRun === null || pace < bestPaceRun.pace_per_mile_seconds)) {
+          bestPaceRun = { ...r, pace_per_mile_seconds: pace };
+        }
+        if (elev > 0 && (mostElevationRun === null || elev > mostElevationRun.elevation_ft)) {
+          mostElevationRun = { ...r, elevation_ft: elev };
+        }
+      }
+
+      setRunRecords({ longestRun, bestPaceRun, mostElevationRun });
+    } else {
+      setRunRecords(null);
+    }
+
     setLoading(false);
   };
 
@@ -324,10 +494,8 @@ export default function ProgressScreen() {
   const maxMileage = Math.max(...weeklyMileage.map((d) => d.value), 0.1);
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-    >
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+
       {/* Body Weight Logging */}
       <Text style={styles.sectionLabel}>LOG WEIGHT</Text>
       <Card style={styles.weightCard}>
@@ -398,6 +566,24 @@ export default function ProgressScreen() {
         </>
       )}
 
+      {/* Training Frequency Heatmap */}
+      <Text style={styles.sectionLabel}>TRAINING FREQUENCY — 12 WEEKS</Text>
+      <Card style={styles.heatmapCard}>
+        {loading ? (
+          <Text style={styles.loadingText}>Loading...</Text>
+        ) : (heatmapWorkoutDays.size === 0 && heatmapRunDays.size === 0) ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyEmoji}>📅</Text>
+            <Text style={styles.emptyText}>No sessions logged yet.</Text>
+          </View>
+        ) : (
+          <FrequencyHeatmap
+            workoutDays={heatmapWorkoutDays}
+            runDays={heatmapRunDays}
+          />
+        )}
+      </Card>
+
       {/* PR Tracker */}
       <Text style={styles.sectionLabel}>PERSONAL RECORDS 🏆</Text>
       <Card>
@@ -420,7 +606,55 @@ export default function ProgressScreen() {
         )}
       </Card>
 
-      {/* Streak card */}
+      {/* Run Records */}
+      {runRecords && (runRecords.longestRun || runRecords.bestPaceRun || runRecords.mostElevationRun) && (
+        <>
+          <Text style={styles.sectionLabel}>RUN RECORDS 🏃</Text>
+          <Card style={styles.runRecordsCard}>
+            {runRecords.longestRun && (
+              <View style={styles.runRecordRow}>
+                <Text style={styles.runRecordEmoji}>📏</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.runRecordLabel}>LONGEST RUN</Text>
+                  <Text style={styles.runRecordValue}>
+                    {Number(runRecords.longestRun.distance_mi).toFixed(2)} mi
+                  </Text>
+                </View>
+              </View>
+            )}
+            {runRecords.longestRun && (runRecords.bestPaceRun || runRecords.mostElevationRun) && (
+              <View style={styles.divider} />
+            )}
+            {runRecords.bestPaceRun && (
+              <View style={styles.runRecordRow}>
+                <Text style={styles.runRecordEmoji}>⚡</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.runRecordLabel}>BEST PACE</Text>
+                  <Text style={styles.runRecordValue}>
+                    {formatPace(runRecords.bestPaceRun.pace_per_mile_seconds)}
+                  </Text>
+                </View>
+              </View>
+            )}
+            {runRecords.bestPaceRun && runRecords.mostElevationRun && (
+              <View style={styles.divider} />
+            )}
+            {runRecords.mostElevationRun && (
+              <View style={styles.runRecordRow}>
+                <Text style={styles.runRecordEmoji}>⛰️</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.runRecordLabel}>MOST ELEVATION</Text>
+                  <Text style={styles.runRecordValue}>
+                    {runRecords.mostElevationRun.elevation_ft} ft
+                  </Text>
+                </View>
+              </View>
+            )}
+          </Card>
+        </>
+      )}
+
+      {/* Consistency */}
       <Text style={styles.sectionLabel}>CONSISTENCY</Text>
       <View style={styles.streakRow}>
         <Card style={[styles.streakCard, { borderColor: colors.gold }]}>
@@ -436,6 +670,7 @@ export default function ProgressScreen() {
           <Text style={styles.streakLabel}>Tracked PRs</Text>
         </Card>
       </View>
+
     </ScrollView>
   );
 }
@@ -531,6 +766,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 4,
+    paddingHorizontal: 8,
   },
   weightMinMaxText: {
     fontSize: 11,
@@ -587,9 +823,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
   },
+  // PR rows
   prRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingVertical: 12,
   },
   prName: {
@@ -612,10 +849,102 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: 2,
   },
+  strengthBadge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginTop: 4,
+  },
+  strengthBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
   divider: {
     height: 1,
     backgroundColor: colors.border,
   },
+  // Heatmap
+  heatmapCard: {
+    marginBottom: 24,
+    padding: 12,
+  },
+  heatmapLegend: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 10,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 3,
+  },
+  legendText: {
+    fontSize: 10,
+    color: colors.muted,
+  },
+  heatmapDowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  heatmapWeekLabel: {
+    width: 44,
+    fontSize: 8,
+    color: colors.muted,
+    textAlign: 'right',
+    paddingRight: 4,
+  },
+  heatmapDow: {
+    fontSize: 8,
+    color: colors.muted,
+    textAlign: 'center',
+    marginHorizontal: 1,
+  },
+  heatmapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 3,
+  },
+  heatmapCell: {
+    borderRadius: 2,
+    marginHorizontal: 1,
+  },
+  // Run records
+  runRecordsCard: {
+    marginBottom: 24,
+  },
+  runRecordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    gap: 12,
+  },
+  runRecordEmoji: {
+    fontSize: 24,
+    width: 36,
+    textAlign: 'center',
+  },
+  runRecordLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.muted,
+    letterSpacing: 1.5,
+    marginBottom: 2,
+  },
+  runRecordValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.blue,
+  },
+  // Streak / consistency
   streakRow: {
     flexDirection: 'row',
     gap: 12,
