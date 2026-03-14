@@ -184,7 +184,20 @@ function SetRow({ setData, setIndex, onUpdateWeight, onUpdateReps, onToggleCompl
   );
 }
 
-function ExerciseCard({ exercise, onAddSet, onUpdateSet, onRemoveSet, onUpdateNotes, onRemove, onSetCompleted, weightLabel }) {
+// Form check video button — shown in exercise card header
+function FormCheckBtn({ exerciseName, navigation }) {
+  return (
+    <TouchableOpacity
+      style={styles.formCheckBtn}
+      onPress={() => navigation?.navigate('FormCheck', { exerciseName })}
+      activeOpacity={0.7}
+    >
+      <Text style={styles.formCheckBtnText}>📹</Text>
+    </TouchableOpacity>
+  );
+}
+
+function ExerciseCard({ exercise, onAddSet, onUpdateSet, onRemoveSet, onUpdateNotes, onRemove, onSetCompleted, weightLabel, navigation }) {
   // Calculate estimated 1RM
   let max1RM = 0;
   for (const s of exercise.sets) {
@@ -206,6 +219,7 @@ function ExerciseCard({ exercise, onAddSet, onUpdateSet, onRemoveSet, onUpdateNo
             <Text style={styles.lastPerf}>Last: {exercise.lastPerformance}</Text>
           ) : null}
         </View>
+        <FormCheckBtn exerciseName={exercise.name} navigation={navigation} />
         <TouchableOpacity onPress={onRemove} style={styles.removeBtn}>
           <Text style={styles.removeBtnText}>✕</Text>
         </TouchableOpacity>
@@ -605,6 +619,7 @@ export default function WorkoutScreen({ navigation, route }) {
                 key={`${exercise.name}-${index}`}
                 exercise={exercise}
                 weightLabel={weightLabel}
+                navigation={navigation}
                 onAddSet={() => addSetToExercise(index)}
                 onUpdateSet={(setIdx, field, val) => updateSetField(index, setIdx, field, val)}
                 onRemoveSet={(setIdx) => removeSet(index, setIdx)}
@@ -984,6 +999,20 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 2,
     textAlign: 'right',
+  },
+  formCheckBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+    backgroundColor: colors.background,
+  },
+  formCheckBtnText: {
+    fontSize: 14,
   },
   libraryChip: {
     backgroundColor: colors.surface,

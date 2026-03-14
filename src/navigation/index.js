@@ -22,6 +22,7 @@ import AIWorkoutScreen from '../screens/AIWorkoutScreen';
 import LiveRunScreen from '../screens/LiveRunScreen';
 import GymScreen from '../screens/GymScreen';
 import EventsScreen from '../screens/EventsScreen';
+import FormCheckScreen from '../screens/FormCheckScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -241,6 +242,11 @@ export default function RootNavigator() {
         <Stack.Screen
           name="LiveRun"
           component={LiveRunScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="FormCheck"
+          component={FormCheckScreen}
           options={{ headerShown: false }}
         />
       </Stack.Navigator>

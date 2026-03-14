@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,22 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  Modal,
+  Image,
+  ActionSheetIOS,
+  Platform,
+  ActivityIndicator,
+  FlatList,
 } from 'react-native';
 import Svg, { Polyline, Circle, Line } from 'react-native-svg';
+import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../theme/colors';
 import Card from '../components/Card';
 import GoldButton from '../components/GoldButton';
 import { supabase } from '../lib/supabase';
 import { useProfile } from '../context/ProfileContext';
+import FilteredImage from '../components/FilteredImage';
+import PhotoFilterModal from '../components/PhotoFilterModal';
 
 const { width } = Dimensions.get('window');
 
@@ -107,7 +116,7 @@ function WeightLineChart({ data, unitLabel = 'lbs' }) {
   );
 }
 
-// ── Training Frequency Heatmap (12 weeks × 7 days) ──────────────────────────
+// ── Training Frequency Heatmap ────────────────────────────────────────────────
 function FrequencyHeatmap({ workoutDays, runDays }) {
   const today = new Date();
   const cells = [];
@@ -239,6 +248,347 @@ const RANGE_OPTIONS = [
   { label: '90D', days: 90 },
 ];
 
+// ── Progress Photos Section ─────────────────────────────────────────────────
+
+const PHOTO_THUMB = (width - 60) / 2;
+
+function ProgressPhotosSection({ userId }) {
+  const [photos, setPhotos] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  // Filter modal state
+  const [pendingUri, setPendingUri] = useState(null);
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+
+  // Fullscreen viewer
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerPhoto, setViewerPhoto] = useState(null);
+
+  // Compare mode
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareA, setCompareA] = useState(null);
+  const [compareB, setCompareB] = useState(null);
+  const [compareModalVisible, setCompareModalVisible] = useState(false);
+
+  useEffect(() => {
+    if (userId) loadPhotos();
+  }, [userId]);
+
+  const loadPhotos = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('progress_photos')
+      .select('*')
+      .eq('user_id', userId)
+      .order('taken_at', { ascending: false });
+    setPhotos(data || []);
+    setLoading(false);
+  };
+
+  const openPhotoPicker = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Take Photo', 'Choose from Library', 'Cancel'], cancelButtonIndex: 2 },
+        (idx) => {
+          if (idx === 0) launchCamera();
+          else if (idx === 1) launchLibrary();
+        }
+      );
+    } else {
+      Alert.alert('Add Progress Photo', 'Choose source', [
+        { text: 'Take Photo', onPress: launchCamera },
+        { text: 'Choose from Library', onPress: launchLibrary },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
+
+  const launchCamera = async () => {
+    const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+    if (!granted) { Alert.alert('Camera access required'); return; }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [3, 4],
+      quality: 0.85,
+    });
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      setPendingUri(result.assets[0].uri);
+      setFilterModalVisible(true);
+    }
+  };
+
+  const launchLibrary = async () => {
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) { Alert.alert('Library access required'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [3, 4],
+      quality: 0.85,
+    });
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      setPendingUri(result.assets[0].uri);
+      setFilterModalVisible(true);
+    }
+  };
+
+  const handleFilterSave = async (filterName, label) => {
+    setFilterModalVisible(false);
+    if (!pendingUri || !userId) return;
+
+    setUploading(true);
+    try {
+      const timestamp = Date.now();
+      const filePath = `${userId}/${timestamp}.jpg`;
+      const response = await fetch(pendingUri);
+      const blob = await response.blob();
+
+      const { error: uploadError } = await supabase.storage
+        .from('progress-photos')
+        .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage.from('progress-photos').getPublicUrl(filePath);
+
+      const { error: insertError } = await supabase.from('progress_photos').insert({
+        user_id: userId,
+        photo_url: urlData.publicUrl,
+        label: label || 'front',
+        filter_name: filterName || 'original',
+        taken_at: new Date().toISOString(),
+      });
+      if (insertError) throw insertError;
+
+      await loadPhotos();
+    } catch (err) {
+      Alert.alert('Upload failed', err.message);
+    } finally {
+      setUploading(false);
+      setPendingUri(null);
+    }
+  };
+
+  const handleFilterCancel = () => {
+    setFilterModalVisible(false);
+    setPendingUri(null);
+  };
+
+  const deletePhoto = (photo) => {
+    Alert.alert('Delete Photo', 'Remove this progress photo?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await supabase.from('progress_photos').delete().eq('id', photo.id);
+          loadPhotos();
+        },
+      },
+    ]);
+  };
+
+  const openViewer = (photo) => {
+    setViewerPhoto(photo);
+    setViewerVisible(true);
+  };
+
+  const openCompare = () => {
+    if (photos.length < 2) return;
+    setCompareA(photos[photos.length - 1]); // oldest
+    setCompareB(photos[0]);                  // newest
+    setCompareModalVisible(true);
+  };
+
+  const LABEL_COLOR = { front: colors.blue, back: '#ff6b6b', side: colors.gold, other: colors.muted };
+
+  return (
+    <View>
+      {/* Filter modal */}
+      <PhotoFilterModal
+        visible={filterModalVisible}
+        uri={pendingUri}
+        context="progress"
+        onSave={handleFilterSave}
+        onCancel={handleFilterCancel}
+      />
+
+      {/* Header row */}
+      <View style={styles.photoSectionHeader}>
+        <Text style={styles.sectionLabel}>PROGRESS PHOTOS 📸</Text>
+        <View style={styles.photoHeaderActions}>
+          {photos.length >= 2 && (
+            <TouchableOpacity style={styles.compareBtn} onPress={openCompare}>
+              <Text style={styles.compareBtnText}>COMPARE</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.addPhotoBtn} onPress={openPhotoPicker} disabled={uploading}>
+            {uploading ? (
+              <ActivityIndicator size="small" color={colors.gold} />
+            ) : (
+              <Text style={styles.addPhotoBtnText}>+ ADD</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {loading ? (
+        <ActivityIndicator color={colors.gold} style={{ marginVertical: 20 }} />
+      ) : photos.length === 0 ? (
+        <Card style={styles.photoEmptyCard}>
+          <Text style={styles.photoEmptyEmoji}>📸</Text>
+          <Text style={styles.photoEmptyText}>No progress photos yet.</Text>
+          <Text style={styles.photoEmptySubtext}>Tap + ADD to start tracking your transformation.</Text>
+          <TouchableOpacity style={styles.addPhotoLargeBtn} onPress={openPhotoPicker}>
+            <Text style={styles.addPhotoLargeBtnText}>📷 ADD FIRST PHOTO</Text>
+          </TouchableOpacity>
+        </Card>
+      ) : (
+        <View style={styles.photoGrid}>
+          {photos.map((photo) => (
+            <TouchableOpacity
+              key={photo.id}
+              style={styles.photoCard}
+              onPress={() => openViewer(photo)}
+              onLongPress={() => deletePhoto(photo)}
+              activeOpacity={0.85}
+            >
+              <FilteredImage
+                uri={photo.photo_url}
+                filterName={photo.filter_name || 'original'}
+                style={styles.photoThumb}
+              />
+              {/* Label badge */}
+              <View style={[styles.photoLabelBadge, { backgroundColor: LABEL_COLOR[photo.label] || colors.muted }]}>
+                <Text style={styles.photoLabelText}>{(photo.label || 'front').toUpperCase()}</Text>
+              </View>
+              {/* Date */}
+              <Text style={styles.photoDate}>
+                {new Date(photo.taken_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </Text>
+              {/* Delete button */}
+              <TouchableOpacity
+                style={styles.photoDeleteBtn}
+                onPress={() => deletePhoto(photo)}
+              >
+                <Text style={styles.photoDeleteText}>×</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* Fullscreen viewer modal */}
+      <Modal visible={viewerVisible} animationType="fade" transparent onRequestClose={() => setViewerVisible(false)}>
+        <View style={styles.viewerOverlay}>
+          <TouchableOpacity style={styles.viewerClose} onPress={() => setViewerVisible(false)}>
+            <Text style={styles.viewerCloseText}>✕</Text>
+          </TouchableOpacity>
+          {viewerPhoto && (
+            <>
+              <FilteredImage
+                uri={viewerPhoto.photo_url}
+                filterName={viewerPhoto.filter_name || 'original'}
+                style={styles.viewerImage}
+              />
+              <View style={styles.viewerMeta}>
+                <Text style={styles.viewerDate}>
+                  {new Date(viewerPhoto.taken_at).toLocaleDateString('en-US', {
+                    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+                  })}
+                </Text>
+                <Text style={styles.viewerLabel}>
+                  {(viewerPhoto.label || 'front').toUpperCase()} · {(viewerPhoto.filter_name || 'original').toUpperCase()}
+                </Text>
+                {viewerPhoto.notes ? (
+                  <Text style={styles.viewerNotes}>{viewerPhoto.notes}</Text>
+                ) : null}
+              </View>
+            </>
+          )}
+        </View>
+      </Modal>
+
+      {/* Compare modal */}
+      <Modal visible={compareModalVisible} animationType="slide" transparent onRequestClose={() => setCompareModalVisible(false)}>
+        <View style={styles.compareOverlay}>
+          <View style={styles.compareModal}>
+            <Text style={styles.compareTitle}>BEFORE / AFTER</Text>
+            <View style={styles.comparePair}>
+              {compareA && (
+                <View style={styles.compareItem}>
+                  <FilteredImage
+                    uri={compareA.photo_url}
+                    filterName={compareA.filter_name || 'original'}
+                    style={styles.comparePhoto}
+                  />
+                  <Text style={styles.compareItemLabel}>
+                    {new Date(compareA.taken_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                  </Text>
+                  <Text style={styles.compareItemSub}>BEFORE</Text>
+                </View>
+              )}
+              <View style={styles.compareDivider}>
+                <Text style={styles.compareDividerText}>VS</Text>
+              </View>
+              {compareB && (
+                <View style={styles.compareItem}>
+                  <FilteredImage
+                    uri={compareB.photo_url}
+                    filterName={compareB.filter_name || 'original'}
+                    style={styles.comparePhoto}
+                  />
+                  <Text style={styles.compareItemLabel}>
+                    {new Date(compareB.taken_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                  </Text>
+                  <Text style={styles.compareItemSub}>AFTER</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Photo selectors */}
+            <Text style={styles.compareSelectLabel}>SELECT BEFORE</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.compareSelector}>
+              {[...photos].reverse().map((p) => (
+                <TouchableOpacity key={p.id} onPress={() => setCompareA(p)}>
+                  <FilteredImage
+                    uri={p.photo_url}
+                    filterName={p.filter_name || 'original'}
+                    style={[
+                      styles.compareSelectorThumb,
+                      compareA?.id === p.id && styles.compareSelectorThumbActive,
+                    ]}
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <Text style={styles.compareSelectLabel}>SELECT AFTER</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.compareSelector}>
+              {photos.map((p) => (
+                <TouchableOpacity key={p.id} onPress={() => setCompareB(p)}>
+                  <FilteredImage
+                    uri={p.photo_url}
+                    filterName={p.filter_name || 'original'}
+                    style={[
+                      styles.compareSelectorThumb,
+                      compareB?.id === p.id && styles.compareSelectorThumbActive,
+                    ]}
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity style={styles.compareCloseBtn} onPress={() => setCompareModalVisible(false)}>
+              <Text style={styles.compareCloseBtnText}>CLOSE</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
 // ── Main Screen ────────────────────────────────────────────────────────────────
 export default function ProgressScreen() {
   const { weightLabel } = useProfile();
@@ -247,12 +597,13 @@ export default function ProgressScreen() {
   const [prs, setPrs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [volumeRange, setVolumeRange] = useState(7);
+  const [userId, setUserId] = useState(null);
 
   // Body weight
   const [weightInput, setWeightInput] = useState('');
   const [savingWeight, setSavingWeight] = useState(false);
   const [weightData, setWeightData] = useState([]);
-  const [weightHistory, setWeightHistory] = useState([]); // last 7 entries {id, date, weight_lbs}
+  const [weightHistory, setWeightHistory] = useState([]);
 
   // Body fat
   const [bodyFatInput, setBodyFatInput] = useState('');
@@ -260,7 +611,7 @@ export default function ProgressScreen() {
   const [bodyFatData, setBodyFatData] = useState([]);
   const [bodyFatHistory, setBodyFatHistory] = useState([]);
 
-  // Weekly mileage (runs)
+  // Weekly mileage
   const [weeklyMileage, setWeeklyMileage] = useState([]);
   const [mileageRange, setMileageRange] = useState(7);
 
@@ -277,6 +628,7 @@ export default function ProgressScreen() {
   const loadProgress = async (rangeDays = 7, mileageDays = 7) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
+    setUserId(user.id);
 
     // Build days array for volume chart
     const days = [];
@@ -317,7 +669,7 @@ export default function ProgressScreen() {
 
     setWeeklyData(chartData);
 
-    // PRs — max weight per exercise name
+    // PRs
     const { data: allExercises } = await supabase
       .from('exercises')
       .select('name, weight_lbs, sets, reps, workout_id, workouts!inner(user_id, date)')
@@ -344,7 +696,7 @@ export default function ProgressScreen() {
       setPrs(prList);
     }
 
-    // Body weight — last 30 days (with IDs for deletion)
+    // Body weight
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
     const { data: weightLogs } = await supabase
@@ -361,14 +713,13 @@ export default function ProgressScreen() {
           weight: parseFloat(w.weight_lbs),
         }))
       );
-      // Last 7 for history list
       setWeightHistory(weightLogs.slice(-7).reverse());
     } else {
       setWeightData([]);
       setWeightHistory([]);
     }
 
-    // Weekly mileage with dynamic range
+    // Weekly mileage
     const mileageStart = new Date();
     mileageStart.setDate(mileageStart.getDate() - (mileageDays - 1));
     const mileageStartStr = mileageStart.toISOString().split('T')[0];
@@ -403,7 +754,7 @@ export default function ProgressScreen() {
       });
     setWeeklyMileage(mileageData);
 
-    // ── Heatmap data — last 84 days
+    // Heatmap
     const heatmapStart = new Date();
     heatmapStart.setDate(heatmapStart.getDate() - 83);
     const heatmapStartStr = heatmapStart.toISOString().split('T')[0];
@@ -416,7 +767,7 @@ export default function ProgressScreen() {
     setHeatmapWorkoutDays(new Set((hmWorkouts || []).map((w) => w.date)));
     setHeatmapRunDays(new Set((hmRuns || []).map((r) => r.date)));
 
-    // ── Run records
+    // Run records
     const { data: allRuns } = await supabase
       .from('runs')
       .select('distance_mi, pace_per_mile_seconds, elevation_ft')
@@ -437,7 +788,7 @@ export default function ProgressScreen() {
       setRunRecords(null);
     }
 
-    // ── Streak calculation (same as HomeScreen)
+    // Streak
     const { data: allWorkoutDates } = await supabase
       .from('workouts')
       .select('date')
@@ -462,7 +813,7 @@ export default function ProgressScreen() {
       setStreak(0);
     }
 
-    // ── Body fat — last 30 days
+    // Body fat
     const bfStart = new Date();
     bfStart.setDate(bfStart.getDate() - 29);
     const { data: bfLogs } = await supabase
@@ -586,8 +937,6 @@ export default function ProgressScreen() {
           <>
             <Text style={styles.weightChartLabel}>LAST 30 DAYS</Text>
             <WeightLineChart data={weightData} unitLabel={weightLabel} />
-
-            {/* Last 7 entries with delete */}
             {weightHistory.length > 0 && (
               <View style={styles.weightHistoryList}>
                 {weightHistory.map((entry) => (
@@ -614,6 +963,9 @@ export default function ProgressScreen() {
         )}
       </Card>
 
+      {/* ── PROGRESS PHOTOS ── */}
+      <ProgressPhotosSection userId={userId} />
+
       {/* Body Fat % */}
       <Text style={styles.sectionLabel}>BODY FAT %</Text>
       <Card style={styles.weightCard}>
@@ -638,7 +990,6 @@ export default function ProgressScreen() {
           <>
             <Text style={styles.weightChartLabel}>LAST 30 DAYS</Text>
             <WeightLineChart data={bodyFatData} unitLabel="%" />
-
             {bodyFatHistory.length > 0 && (
               <View style={styles.weightHistoryList}>
                 {bodyFatHistory.map((entry) => (
@@ -888,4 +1239,110 @@ const styles = StyleSheet.create({
   streakCard: { flex: 1, alignItems: 'center', paddingVertical: 20 },
   streakValue: { fontSize: 32, fontWeight: '800', color: colors.gold, marginBottom: 4 },
   streakLabel: { fontSize: 11, color: colors.muted, letterSpacing: 1, textAlign: 'center' },
+
+  // ── Progress Photos ──────────────────────────────────────────────────────────
+  photoSectionHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 8, marginBottom: 10,
+  },
+  photoHeaderActions: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  compareBtn: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+    borderWidth: 1, borderColor: colors.blue,
+  },
+  compareBtnText: { color: colors.blue, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  addPhotoBtn: {
+    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8,
+    borderWidth: 1, borderColor: colors.gold, minWidth: 56, alignItems: 'center',
+  },
+  addPhotoBtnText: { color: colors.gold, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  photoEmptyCard: { alignItems: 'center', padding: 28, marginBottom: 20 },
+  photoEmptyEmoji: { fontSize: 36, marginBottom: 10 },
+  photoEmptyText: { color: colors.text, fontSize: 15, fontWeight: '600', marginBottom: 4 },
+  photoEmptySubtext: { color: colors.muted, fontSize: 12, textAlign: 'center', marginBottom: 16 },
+  addPhotoLargeBtn: {
+    paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10,
+    borderWidth: 1, borderColor: colors.gold, backgroundColor: 'rgba(201,168,76,0.1)',
+  },
+  addPhotoLargeBtnText: { color: colors.gold, fontSize: 13, fontWeight: '700', letterSpacing: 1 },
+  photoGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20,
+  },
+  photoCard: {
+    width: PHOTO_THUMB,
+    borderRadius: 10,
+    overflow: 'visible',
+    position: 'relative',
+  },
+  photoThumb: {
+    width: PHOTO_THUMB,
+    height: PHOTO_THUMB * (4 / 3),
+    borderRadius: 10,
+  },
+  photoLabelBadge: {
+    position: 'absolute', top: 8, left: 8,
+    borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2,
+  },
+  photoLabelText: { fontSize: 8, color: '#fff', fontWeight: '800', letterSpacing: 1 },
+  photoDate: {
+    fontSize: 10, color: colors.muted, marginTop: 5, textAlign: 'center', fontWeight: '600',
+  },
+  photoDeleteBtn: {
+    position: 'absolute', top: 4, right: 4,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10,
+    width: 22, height: 22, alignItems: 'center', justifyContent: 'center',
+  },
+  photoDeleteText: { color: '#fff', fontSize: 13, fontWeight: '700', lineHeight: 16 },
+
+  // Fullscreen viewer
+  viewerOverlay: {
+    flex: 1, backgroundColor: '#000', justifyContent: 'center',
+  },
+  viewerClose: {
+    position: 'absolute', top: 50, right: 20, zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20,
+    width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
+  },
+  viewerCloseText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  viewerImage: { width: '100%', height: '80%' },
+  viewerMeta: { padding: 20 },
+  viewerDate: { color: colors.text, fontSize: 15, fontWeight: '600', marginBottom: 4 },
+  viewerLabel: { color: colors.gold, fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
+  viewerNotes: { color: colors.muted, fontSize: 13, marginTop: 6 },
+
+  // Compare modal
+  compareOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'flex-end',
+  },
+  compareModal: {
+    backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 20, paddingBottom: 36,
+  },
+  compareTitle: {
+    fontSize: 12, fontWeight: '800', color: colors.gold, letterSpacing: 2,
+    marginBottom: 16, textAlign: 'center',
+  },
+  comparePair: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
+  compareItem: { flex: 1, alignItems: 'center' },
+  comparePhoto: { width: '100%', height: 180, borderRadius: 10 },
+  compareItemLabel: { color: colors.text, fontSize: 11, fontWeight: '600', marginTop: 6 },
+  compareItemSub: { color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 1.5 },
+  compareDivider: {
+    width: 28, alignItems: 'center', justifyContent: 'center',
+  },
+  compareDividerText: { color: colors.gold, fontSize: 12, fontWeight: '800' },
+  compareSelectLabel: {
+    fontSize: 9, color: colors.muted, fontWeight: '700', letterSpacing: 2, marginBottom: 8, marginTop: 4,
+  },
+  compareSelector: { marginBottom: 8 },
+  compareSelectorThumb: {
+    width: 50, height: 66, borderRadius: 6, marginRight: 6,
+    borderWidth: 2, borderColor: 'transparent',
+  },
+  compareSelectorThumbActive: { borderColor: colors.gold },
+  compareCloseBtn: {
+    marginTop: 16, paddingVertical: 12, alignItems: 'center',
+    borderRadius: 10, borderWidth: 1, borderColor: colors.border,
+  },
+  compareCloseBtnText: { color: colors.muted, fontSize: 13, fontWeight: '700', letterSpacing: 1.5 },
 });
