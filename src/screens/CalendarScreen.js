@@ -70,6 +70,9 @@ export default function CalendarScreen({ navigation }) {
   const [userId, setUserId] = useState(null);
   const [subscriptionTier, setSubscriptionTier] = useState('free');
 
+  // Meal logs for selected day (for nutrition dot + summary)
+  const [dayMealLogs, setDayMealLogs] = useState([]);
+
   // Monthly dot data
   const [workoutDots, setWorkoutDots] = useState({}); // date -> true
   const [nutritionDots, setNutritionDots] = useState({}); // date -> carb_day_type
@@ -128,15 +131,17 @@ export default function CalendarScreen({ navigation }) {
     (rData || []).forEach((r) => { wDots[r.date] = true; });
     setWorkoutDots(wDots);
 
-    // Nutrition dots
-    const { data: nData } = await supabase
-      .from('nutrition_logs')
-      .select('date, carb_day_type')
-      .eq('user_id', userId)
-      .gte('date', firstDay)
-      .lte('date', lastDayStr);
+    // Nutrition dots — from nutrition_logs AND meal_logs
+    const [{ data: nData }, { data: mealDatesData }] = await Promise.all([
+      supabase.from('nutrition_logs').select('date, carb_day_type').eq('user_id', userId).gte('date', firstDay).lte('date', lastDayStr),
+      supabase.from('meal_logs').select('date').eq('user_id', userId).gte('date', firstDay).lte('date', lastDayStr),
+    ]);
     const nDots = {};
-    (nData || []).forEach((n) => { nDots[n.date] = n.carb_day_type || 'none'; });
+    (nData || []).forEach((n) => { nDots[n.date] = n.carb_day_type || 'logged'; });
+    // Also mark days with meal_logs entries
+    (mealDatesData || []).forEach((m) => {
+      if (!nDots[m.date]) nDots[m.date] = 'logged';
+    });
     setNutritionDots(nDots);
 
     // Recovery dots
@@ -162,17 +167,20 @@ export default function CalendarScreen({ navigation }) {
     setDayRun(null);
     setDayNutrition(null);
     setDayRecovery(null);
+    setDayMealLogs([]);
 
-    const [{ data: wData }, { data: rData }, { data: nData }, { data: recData }] = await Promise.all([
-      supabase.from('workouts').select('id, name, exercises(id)').eq('user_id', userId).eq('date', dateStr).order('created_at', { ascending: false }).limit(1).single(),
+    const [{ data: wData }, { data: rData }, { data: nData }, { data: recData }, { data: mealData }] = await Promise.all([
+      supabase.from('workouts').select('id, name, exercises(id, name)').eq('user_id', userId).eq('date', dateStr).order('created_at', { ascending: false }).limit(1).single(),
       supabase.from('runs').select('distance_mi, duration_seconds, pace_per_mile_seconds').eq('user_id', userId).eq('date', dateStr).order('created_at', { ascending: false }).limit(1).single(),
       supabase.from('nutrition_logs').select('*').eq('user_id', userId).eq('date', dateStr).single(),
       supabase.from('recovery_logs').select('*').eq('user_id', userId).eq('date', dateStr).single(),
+      supabase.from('meal_logs').select('meal_name, calories, protein_g').eq('user_id', userId).eq('date', dateStr).order('created_at', { ascending: true }),
     ]);
 
     if (wData) setDayWorkout(wData);
     if (rData) setDayRun(rData);
     if (nData) setDayNutrition(nData);
+    setDayMealLogs(mealData || []);
     if (recData) {
       setDayRecovery(recData);
       setSleepHours(String(recData.sleep_hours || '7'));
@@ -299,7 +307,14 @@ export default function CalendarScreen({ navigation }) {
               <Text style={styles.detailEmoji}>🏋️</Text>
               <View style={styles.detailInfo}>
                 <Text style={styles.detailTitle}>{dayWorkout.name || 'Workout'}</Text>
-                <Text style={styles.detailMeta}>{dayWorkout.exercises?.length || 0} exercises</Text>
+                {dayWorkout.exercises && dayWorkout.exercises.length > 0 ? (
+                  <Text style={styles.detailMeta}>
+                    {dayWorkout.exercises.slice(0, 3).map((e) => e.name).join(' · ')}
+                    {dayWorkout.exercises.length > 3 ? ` +${dayWorkout.exercises.length - 3} more` : ''}
+                  </Text>
+                ) : (
+                  <Text style={styles.detailMeta}>{dayWorkout.exercises?.length || 0} exercises</Text>
+                )}
               </View>
             </View>
           </Card>
@@ -375,6 +390,18 @@ export default function CalendarScreen({ navigation }) {
             {dayNutrition.notes ? (
               <Text style={styles.detailMeta}>{dayNutrition.notes}</Text>
             ) : null}
+            {dayMealLogs.length > 0 && (
+              <View style={styles.mealSummary}>
+                <Text style={styles.mealSummaryTitle}>TODAY'S MEALS</Text>
+                <Text style={styles.mealSummaryText}>
+                  {dayMealLogs.reduce((s, m) => s + (parseInt(m.calories) || 0), 0)} kcal
+                  {' · '}
+                  {dayMealLogs.reduce((s, m) => s + (parseFloat(m.protein_g) || 0), 0).toFixed(0)}g protein
+                  {' · '}
+                  {dayMealLogs.length} meal{dayMealLogs.length !== 1 ? 's' : ''}
+                </Text>
+              </View>
+            )}
             <GoldButton
               title="LOG MEAL"
               onPress={() => {
@@ -386,7 +413,19 @@ export default function CalendarScreen({ navigation }) {
           </Card>
         ) : (
           <Card style={styles.emptyDetail}>
-            <Text style={styles.emptyDetailText}>No nutrition data for this day</Text>
+            <Text style={styles.emptyDetailText}>No nutrition plan for this day</Text>
+            {dayMealLogs.length > 0 && (
+              <View style={styles.mealSummary}>
+                <Text style={styles.mealSummaryTitle}>MEALS LOGGED</Text>
+                <Text style={styles.mealSummaryText}>
+                  {dayMealLogs.reduce((s, m) => s + (parseInt(m.calories) || 0), 0)} kcal
+                  {' · '}
+                  {dayMealLogs.reduce((s, m) => s + (parseFloat(m.protein_g) || 0), 0).toFixed(0)}g protein
+                  {' · '}
+                  {dayMealLogs.length} meal{dayMealLogs.length !== 1 ? 's' : ''}
+                </Text>
+              </View>
+            )}
             <GoldButton
               title="LOG MEAL"
               onPress={() => {
@@ -895,6 +934,25 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '600',
     marginBottom: 8,
+  },
+  mealSummary: {
+    backgroundColor: 'rgba(201,168,76,0.08)',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  mealSummaryTitle: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.gold,
+    letterSpacing: 1.5,
+    marginBottom: 4,
+  },
+  mealSummaryText: {
+    fontSize: 13,
+    color: colors.text,
+    fontWeight: '500',
   },
   // Recovery
   recoveryGrid: {

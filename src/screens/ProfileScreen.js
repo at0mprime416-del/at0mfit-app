@@ -146,6 +146,18 @@ export default function ProfileScreen({ navigation }) {
       })
       .eq('id', user.id);
 
+    // Also log body fat to body_fat_logs if provided
+    const bfValue = parseFloat(metricBodyFat);
+    if (bfValue > 0) {
+      const today = new Date().toISOString().split('T')[0];
+      await supabase
+        .from('body_fat_logs')
+        .upsert(
+          { user_id: user.id, date: today, body_fat_pct: bfValue },
+          { onConflict: 'user_id,date' }
+        );
+    }
+
     setSavingMetrics(false);
     setShowMetrics(false);
     Alert.alert('Saved!', 'Physical metrics updated.');

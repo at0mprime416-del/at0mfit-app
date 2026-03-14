@@ -17,7 +17,17 @@ import { supabase } from '../lib/supabase';
 
 const SUPPLEMENT_CHIPS = ['Creatine', 'Protein', 'Pre-Workout', 'Vitamin D', 'Magnesium', 'Fish Oil'];
 
-const MACRO_TARGETS = { protein: 180, carbs: 250, fat: 80 };
+const DEFAULT_MACRO_TARGETS = { protein: 180, carbs: 250, fat: 80 };
+
+function calcMacroTargets(profile) {
+  const weight = parseFloat(profile?.weight_lbs);
+  if (!weight || weight <= 0) return DEFAULT_MACRO_TARGETS;
+  return {
+    protein: Math.round(weight * 0.8),
+    carbs: Math.round(weight * 1.5),
+    fat: Math.round(weight * 0.4),
+  };
+}
 
 function MacroBar({ label, current, target, color }) {
   const pct = Math.min((current / target) * 100, 100);
@@ -140,6 +150,9 @@ export default function NutritionScreen() {
     loadData();
   };
 
+  // Dynamic macro targets
+  const macroTargets = calcMacroTargets(profile);
+
   // Macro totals
   const totals = meals.reduce(
     (acc, m) => ({
@@ -207,9 +220,9 @@ export default function NutritionScreen() {
                 <Text style={styles.calLabel}>CALORIES</Text>
                 <Text style={styles.calValue}>{totals.calories} kcal</Text>
               </View>
-              <MacroBar label="Protein" current={totals.protein} target={MACRO_TARGETS.protein} color={colors.gold} />
-              <MacroBar label="Carbs" current={totals.carbs} target={MACRO_TARGETS.carbs} color={colors.green} />
-              <MacroBar label="Fat" current={totals.fat} target={MACRO_TARGETS.fat} color="#ff6b6b" />
+              <MacroBar label="Protein" current={totals.protein} target={macroTargets.protein} color={colors.gold} />
+              <MacroBar label="Carbs" current={totals.carbs} target={macroTargets.carbs} color={colors.green} />
+              <MacroBar label="Fat" current={totals.fat} target={macroTargets.fat} color="#ff6b6b" />
             </Card>
           </>
         )}

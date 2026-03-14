@@ -14,6 +14,7 @@ import { colors } from '../theme/colors';
 import Card from '../components/Card';
 import GoldButton from '../components/GoldButton';
 import { supabase } from '../lib/supabase';
+import { useProfile } from '../context/ProfileContext';
 
 const { width } = Dimensions.get('window');
 
@@ -50,7 +51,7 @@ function BarChart({ data, maxValue, barColor, height = 100 }) {
 }
 
 // ── SVG Weight Line Chart ────────────────────────────────────────────────────
-function WeightLineChart({ data }) {
+function WeightLineChart({ data, unitLabel = 'lbs' }) {
   if (!data || data.length === 0) return null;
 
   const chartW = width - 96;
@@ -79,16 +80,7 @@ function WeightLineChart({ data }) {
         }}
       >
         <Svg width={chartW} height={chartH + 20} style={{ marginLeft: 0 }}>
-          {/* baseline */}
-          <Line
-            x1={0}
-            y1={chartH}
-            x2={chartW}
-            y2={chartH}
-            stroke={colors.border}
-            strokeWidth={1}
-          />
-          {/* polyline */}
+          <Line x1={0} y1={chartH} x2={chartW} y2={chartH} stroke={colors.border} strokeWidth={1} />
           {data.length > 1 && (
             <Polyline
               points={polylinePoints}
@@ -98,26 +90,18 @@ function WeightLineChart({ data }) {
               strokeOpacity={0.85}
             />
           )}
-          {/* dots */}
           {points.map((p, i) => (
-            <Circle
-              key={i}
-              cx={p.x}
-              cy={p.y}
-              r={4}
-              fill={colors.gold}
-            />
+            <Circle key={i} cx={p.x} cy={p.y} r={4} fill={colors.gold} />
           ))}
         </Svg>
-        {/* X-axis labels */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 }}>
           <Text style={styles.chartAxisLabel}>{data[0].label}</Text>
           <Text style={styles.chartAxisLabel}>{data[data.length - 1].label}</Text>
         </View>
       </View>
       <View style={styles.weightMinMax}>
-        <Text style={styles.weightMinMaxText}>Min: {minW} lbs</Text>
-        <Text style={styles.weightMinMaxText}>Max: {maxW} lbs</Text>
+        <Text style={styles.weightMinMaxText}>Min: {minW} {unitLabel}</Text>
+        <Text style={styles.weightMinMaxText}>Max: {maxW} {unitLabel}</Text>
       </View>
     </View>
   );
@@ -125,7 +109,6 @@ function WeightLineChart({ data }) {
 
 // ── Training Frequency Heatmap (12 weeks × 7 days) ──────────────────────────
 function FrequencyHeatmap({ workoutDays, runDays }) {
-  // Build 84-day grid ending today
   const today = new Date();
   const cells = [];
   for (let i = 83; i >= 0; i--) {
@@ -135,19 +118,17 @@ function FrequencyHeatmap({ workoutDays, runDays }) {
     const hasWorkout = workoutDays.has(ds);
     const hasRun = runDays.has(ds);
     let color = colors.surface;
-    if (hasWorkout && hasRun) color = '#e6b84a'; // both — brighter gold
+    if (hasWorkout && hasRun) color = '#e6b84a';
     else if (hasWorkout) color = colors.gold;
     else if (hasRun) color = colors.blue;
     cells.push({ ds, color, dayOfWeek: d.getDay() });
   }
 
-  // Split into 12 weeks
   const weeks = [];
   for (let w = 0; w < 12; w++) {
     weeks.push(cells.slice(w * 7, w * 7 + 7));
   }
 
-  // Week labels: show start date of each week
   const getWeekLabel = (weekIdx) => {
     const startCell = weeks[weekIdx][0];
     const d = new Date(startCell.ds + 'T00:00:00');
@@ -158,7 +139,6 @@ function FrequencyHeatmap({ workoutDays, runDays }) {
 
   return (
     <View>
-      {/* Legend */}
       <View style={styles.heatmapLegend}>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: colors.gold }]} />
@@ -174,7 +154,6 @@ function FrequencyHeatmap({ workoutDays, runDays }) {
         </View>
       </View>
 
-      {/* Day of week header */}
       <View style={styles.heatmapDowRow}>
         <View style={styles.heatmapWeekLabel} />
         {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
@@ -182,21 +161,13 @@ function FrequencyHeatmap({ workoutDays, runDays }) {
         ))}
       </View>
 
-      {/* Grid */}
       {weeks.map((week, wIdx) => (
         <View key={wIdx} style={styles.heatmapRow}>
           <Text style={styles.heatmapWeekLabel}>{getWeekLabel(wIdx)}</Text>
           {week.map((cell, cIdx) => (
             <View
               key={cIdx}
-              style={[
-                styles.heatmapCell,
-                {
-                  width: CELL_SIZE,
-                  height: CELL_SIZE,
-                  backgroundColor: cell.color,
-                },
-              ]}
+              style={[styles.heatmapCell, { width: CELL_SIZE, height: CELL_SIZE, backgroundColor: cell.color }]}
             />
           ))}
         </View>
@@ -224,17 +195,14 @@ function getStrengthLevel(exerciseName, weightLbs) {
 
   const standards = STRENGTH_STANDARDS[key];
   const w = parseFloat(weightLbs) || 0;
-
-  if (w >= standards.advanced) return { label: 'ELITE', color: '#39ff14' };   // green
+  if (w >= standards.advanced) return { label: 'ELITE', color: '#39ff14' };
   if (w >= standards.intermediate) return { label: 'ADVANCED', color: colors.gold };
   if (w >= standards.novice) return { label: 'INTERMEDIATE', color: colors.blue };
   return { label: 'NOVICE', color: colors.muted };
 }
 
-// ── PRRow with strength standard label ───────────────────────────────────────
 function PRRow({ name, weight, sets, reps, date }) {
   const level = getStrengthLevel(name, weight);
-
   return (
     <View style={styles.prRow}>
       <View style={{ flex: 1 }}>
@@ -254,7 +222,6 @@ function PRRow({ name, weight, sets, reps, date }) {
   );
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
 function todayStr() {
   return new Date().toISOString().split('T')[0];
 }
@@ -274,6 +241,8 @@ const RANGE_OPTIONS = [
 
 // ── Main Screen ────────────────────────────────────────────────────────────────
 export default function ProgressScreen() {
+  const { weightLabel } = useProfile();
+
   const [weeklyData, setWeeklyData] = useState([]);
   const [prs, setPrs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -283,9 +252,20 @@ export default function ProgressScreen() {
   const [weightInput, setWeightInput] = useState('');
   const [savingWeight, setSavingWeight] = useState(false);
   const [weightData, setWeightData] = useState([]);
+  const [weightHistory, setWeightHistory] = useState([]); // last 7 entries {id, date, weight_lbs}
+
+  // Body fat
+  const [bodyFatInput, setBodyFatInput] = useState('');
+  const [savingBodyFat, setSavingBodyFat] = useState(false);
+  const [bodyFatData, setBodyFatData] = useState([]);
+  const [bodyFatHistory, setBodyFatHistory] = useState([]);
 
   // Weekly mileage (runs)
   const [weeklyMileage, setWeeklyMileage] = useState([]);
+  const [mileageRange, setMileageRange] = useState(7);
+
+  // Streak
+  const [streak, setStreak] = useState(0);
 
   // Heatmap
   const [heatmapWorkoutDays, setHeatmapWorkoutDays] = useState(new Set());
@@ -294,7 +274,7 @@ export default function ProgressScreen() {
   // Run records
   const [runRecords, setRunRecords] = useState(null);
 
-  const loadProgress = async (rangeDays = 7) => {
+  const loadProgress = async (rangeDays = 7, mileageDays = 7) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
@@ -337,7 +317,7 @@ export default function ProgressScreen() {
 
     setWeeklyData(chartData);
 
-    // PRs — max weight per exercise name, with sets & reps
+    // PRs — max weight per exercise name
     const { data: allExercises } = await supabase
       .from('exercises')
       .select('name, weight_lbs, sets, reps, workout_id, workouts!inner(user_id, date)')
@@ -356,10 +336,7 @@ export default function ProgressScreen() {
             weight: ex.weight_lbs,
             sets: ex.sets,
             reps: ex.reps,
-            date: new Date(ex.workouts.date + 'T00:00:00').toLocaleDateString(
-              'en-US',
-              { month: 'short', day: 'numeric' }
-            ),
+            date: new Date(ex.workouts.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
           });
         }
         if (prList.length >= 10) break;
@@ -367,12 +344,12 @@ export default function ProgressScreen() {
       setPrs(prList);
     }
 
-    // Body weight — last 30 days
+    // Body weight — last 30 days (with IDs for deletion)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
     const { data: weightLogs } = await supabase
       .from('body_weight_logs')
-      .select('date, weight_lbs')
+      .select('id, date, weight_lbs')
       .eq('user_id', user.id)
       .gte('date', thirtyDaysAgo.toISOString().split('T')[0])
       .order('date', { ascending: true });
@@ -384,33 +361,49 @@ export default function ProgressScreen() {
           weight: parseFloat(w.weight_lbs),
         }))
       );
+      // Last 7 for history list
+      setWeightHistory(weightLogs.slice(-7).reverse());
     } else {
       setWeightData([]);
+      setWeightHistory([]);
     }
 
-    // Weekly mileage — last 7 days
-    const runDays = [];
-    for (let i = 6; i >= 0; i--) {
+    // Weekly mileage with dynamic range
+    const mileageStart = new Date();
+    mileageStart.setDate(mileageStart.getDate() - (mileageDays - 1));
+    const mileageStartStr = mileageStart.toISOString().split('T')[0];
+    const mileageDaysList = [];
+    for (let i = mileageDays - 1; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      runDays.push(d.toISOString().split('T')[0]);
+      mileageDaysList.push(d.toISOString().split('T')[0]);
     }
+
     const { data: runs } = await supabase
       .from('runs')
       .select('date, distance_mi')
       .eq('user_id', user.id)
-      .gte('date', runDays[0]);
+      .gte('date', mileageStartStr);
 
-    const mileageData = runDays.map((day) => {
-      const miles = (runs || [])
-        .filter((r) => r.date === day)
-        .reduce((sum, r) => sum + (parseFloat(r.distance_mi) || 0), 0);
-      const label = new Date(day + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 1);
-      return { label, value: Math.round(miles * 10) / 10 };
-    });
+    const isMileageShort = mileageDays <= 7;
+    const mileageData = mileageDaysList
+      .filter((_, i) => {
+        if (isMileageShort) return true;
+        if (mileageDays === 30) return i % 3 === 0;
+        return i % 7 === 0;
+      })
+      .map((day) => {
+        const miles = (runs || [])
+          .filter((r) => r.date === day)
+          .reduce((sum, r) => sum + (parseFloat(r.distance_mi) || 0), 0);
+        const label = isMileageShort
+          ? new Date(day + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 1)
+          : new Date(day + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).slice(0, 4);
+        return { label, value: Math.round(miles * 10) / 10 };
+      });
     setWeeklyMileage(mileageData);
 
-    // ── Heatmap data — last 84 days ──────────────────────────────────────────
+    // ── Heatmap data — last 84 days
     const heatmapStart = new Date();
     heatmapStart.setDate(heatmapStart.getDate() - 83);
     const heatmapStartStr = heatmapStart.toISOString().split('T')[0];
@@ -423,49 +416,86 @@ export default function ProgressScreen() {
     setHeatmapWorkoutDays(new Set((hmWorkouts || []).map((w) => w.date)));
     setHeatmapRunDays(new Set((hmRuns || []).map((r) => r.date)));
 
-    // ── Run records ──────────────────────────────────────────────────────────
+    // ── Run records
     const { data: allRuns } = await supabase
       .from('runs')
       .select('distance_mi, pace_per_mile_seconds, elevation_ft')
       .eq('user_id', user.id);
 
     if (allRuns && allRuns.length > 0) {
-      let longestRun = null;
-      let bestPaceRun = null;
-      let mostElevationRun = null;
-
+      let longestRun = null, bestPaceRun = null, mostElevationRun = null;
       for (const r of allRuns) {
         const dist = parseFloat(r.distance_mi) || 0;
         const pace = r.pace_per_mile_seconds;
         const elev = r.elevation_ft || 0;
-
-        if (dist > 0 && (longestRun === null || dist > longestRun.distance_mi)) {
-          longestRun = { ...r, distance_mi: dist };
-        }
-        if (pace && pace > 0 && (bestPaceRun === null || pace < bestPaceRun.pace_per_mile_seconds)) {
-          bestPaceRun = { ...r, pace_per_mile_seconds: pace };
-        }
-        if (elev > 0 && (mostElevationRun === null || elev > mostElevationRun.elevation_ft)) {
-          mostElevationRun = { ...r, elevation_ft: elev };
-        }
+        if (dist > 0 && (longestRun === null || dist > longestRun.distance_mi)) longestRun = { ...r, distance_mi: dist };
+        if (pace && pace > 0 && (bestPaceRun === null || pace < bestPaceRun.pace_per_mile_seconds)) bestPaceRun = { ...r, pace_per_mile_seconds: pace };
+        if (elev > 0 && (mostElevationRun === null || elev > mostElevationRun.elevation_ft)) mostElevationRun = { ...r, elevation_ft: elev };
       }
-
       setRunRecords({ longestRun, bestPaceRun, mostElevationRun });
     } else {
       setRunRecords(null);
+    }
+
+    // ── Streak calculation (same as HomeScreen)
+    const { data: allWorkoutDates } = await supabase
+      .from('workouts')
+      .select('date')
+      .eq('user_id', user.id)
+      .order('date', { ascending: false });
+
+    if (allWorkoutDates && allWorkoutDates.length > 0) {
+      const workoutDaySet = new Set(allWorkoutDates.map((w) => w.date));
+      const today = new Date().toISOString().split('T')[0];
+      let count = 0;
+      const cursor = new Date();
+      if (!workoutDaySet.has(today)) cursor.setDate(cursor.getDate() - 1);
+      while (true) {
+        const dayStr = cursor.toISOString().split('T')[0];
+        if (workoutDaySet.has(dayStr)) {
+          count++;
+          cursor.setDate(cursor.getDate() - 1);
+        } else { break; }
+      }
+      setStreak(count);
+    } else {
+      setStreak(0);
+    }
+
+    // ── Body fat — last 30 days
+    const bfStart = new Date();
+    bfStart.setDate(bfStart.getDate() - 29);
+    const { data: bfLogs } = await supabase
+      .from('body_fat_logs')
+      .select('id, date, body_fat_pct')
+      .eq('user_id', user.id)
+      .gte('date', bfStart.toISOString().split('T')[0])
+      .order('date', { ascending: true });
+
+    if (bfLogs && bfLogs.length > 0) {
+      setBodyFatData(
+        bfLogs.map((b) => ({
+          label: new Date(b.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          weight: parseFloat(b.body_fat_pct),
+        }))
+      );
+      setBodyFatHistory(bfLogs.slice(-7).reverse());
+    } else {
+      setBodyFatData([]);
+      setBodyFatHistory([]);
     }
 
     setLoading(false);
   };
 
   useEffect(() => {
-    loadProgress(volumeRange);
-  }, [volumeRange]);
+    loadProgress(volumeRange, mileageRange);
+  }, [volumeRange, mileageRange]);
 
   const saveWeight = async () => {
     const w = parseFloat(weightInput);
     if (!w || w <= 0) {
-      Alert.alert('Invalid weight', 'Enter a valid weight in lbs.');
+      Alert.alert('Invalid weight', `Enter a valid weight in ${weightLabel}.`);
       return;
     }
     setSavingWeight(true);
@@ -475,18 +505,54 @@ export default function ProgressScreen() {
     const today = todayStr();
     const { error } = await supabase
       .from('body_weight_logs')
-      .upsert(
-        { user_id: user.id, date: today, weight_lbs: w },
-        { onConflict: 'user_id,date' }
-      );
+      .upsert({ user_id: user.id, date: today, weight_lbs: w }, { onConflict: 'user_id,date' });
 
     setSavingWeight(false);
     if (error) {
       Alert.alert('Save failed', error.message);
     } else {
-      Alert.alert('Weight logged! ⚖️', `${w} lbs recorded for today.`);
+      Alert.alert('Weight logged! ⚖️', `${w} ${weightLabel} recorded for today.`);
       setWeightInput('');
-      loadProgress(volumeRange);
+      loadProgress(volumeRange, mileageRange);
+    }
+  };
+
+  const deleteWeight = async (id, dateStr) => {
+    Alert.alert('Delete entry', `Remove weight log for ${dateStr}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await supabase.from('body_weight_logs').delete().eq('id', id);
+          loadProgress(volumeRange, mileageRange);
+        },
+      },
+    ]);
+  };
+
+  const saveBodyFat = async () => {
+    const v = parseFloat(bodyFatInput);
+    if (!v || v <= 0 || v > 70) {
+      Alert.alert('Invalid', 'Enter a valid body fat % (e.g. 15.5).');
+      return;
+    }
+    setSavingBodyFat(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSavingBodyFat(false); return; }
+
+    const today = todayStr();
+    const { error } = await supabase
+      .from('body_fat_logs')
+      .upsert({ user_id: user.id, date: today, body_fat_pct: v }, { onConflict: 'user_id,date' });
+
+    setSavingBodyFat(false);
+    if (error) {
+      Alert.alert('Save failed', error.message);
+    } else {
+      Alert.alert('Body fat logged!', `${v}% recorded for today.`);
+      setBodyFatInput('');
+      loadProgress(volumeRange, mileageRange);
     }
   };
 
@@ -504,7 +570,7 @@ export default function ProgressScreen() {
             style={styles.weightInput}
             value={weightInput}
             onChangeText={setWeightInput}
-            placeholder="Today's weight (lbs)"
+            placeholder={`Today's weight (${weightLabel})`}
             placeholderTextColor={colors.muted}
             keyboardType="decimal-pad"
           />
@@ -519,16 +585,81 @@ export default function ProgressScreen() {
         {weightData.length > 0 ? (
           <>
             <Text style={styles.weightChartLabel}>LAST 30 DAYS</Text>
-            <WeightLineChart data={weightData} />
+            <WeightLineChart data={weightData} unitLabel={weightLabel} />
+
+            {/* Last 7 entries with delete */}
+            {weightHistory.length > 0 && (
+              <View style={styles.weightHistoryList}>
+                {weightHistory.map((entry) => (
+                  <View key={entry.id} style={styles.weightHistoryRow}>
+                    <Text style={styles.weightHistoryDate}>
+                      {new Date(entry.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </Text>
+                    <Text style={styles.weightHistoryValue}>
+                      {entry.weight_lbs} {weightLabel}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.weightDeleteBtn}
+                      onPress={() => deleteWeight(entry.id, new Date(entry.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}
+                    >
+                      <Text style={styles.weightDeleteText}>×</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
           </>
         ) : (
           <Text style={styles.weightEmptyText}>No weight logs yet. Log today's weight above.</Text>
         )}
       </Card>
 
+      {/* Body Fat % */}
+      <Text style={styles.sectionLabel}>BODY FAT %</Text>
+      <Card style={styles.weightCard}>
+        <View style={styles.weightInputRow}>
+          <TextInput
+            style={styles.weightInput}
+            value={bodyFatInput}
+            onChangeText={setBodyFatInput}
+            placeholder="Today's body fat % (e.g. 15.5)"
+            placeholderTextColor={colors.muted}
+            keyboardType="decimal-pad"
+          />
+          <GoldButton
+            title="SAVE"
+            onPress={saveBodyFat}
+            loading={savingBodyFat}
+            style={styles.weightSaveBtn}
+          />
+        </View>
+
+        {bodyFatData.length > 0 ? (
+          <>
+            <Text style={styles.weightChartLabel}>LAST 30 DAYS</Text>
+            <WeightLineChart data={bodyFatData} unitLabel="%" />
+
+            {bodyFatHistory.length > 0 && (
+              <View style={styles.weightHistoryList}>
+                {bodyFatHistory.map((entry) => (
+                  <View key={entry.id} style={styles.weightHistoryRow}>
+                    <Text style={styles.weightHistoryDate}>
+                      {new Date(entry.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </Text>
+                    <Text style={styles.weightHistoryValue}>{entry.body_fat_pct}%</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
+        ) : (
+          <Text style={styles.weightEmptyText}>No body fat logs yet. Log today's % above.</Text>
+        )}
+      </Card>
+
       {/* Weekly Volume */}
       <View style={styles.sectionRow}>
-        <Text style={styles.sectionLabel}>VOLUME (LBS)</Text>
+        <Text style={styles.sectionLabel}>VOLUME ({weightLabel.toUpperCase()})</Text>
         <View style={styles.rangeToggle}>
           {RANGE_OPTIONS.map((r) => (
             <TouchableOpacity
@@ -559,7 +690,22 @@ export default function ProgressScreen() {
       {/* Weekly Mileage */}
       {weeklyMileage.some((d) => d.value > 0) && (
         <>
-          <Text style={styles.sectionLabel}>WEEKLY MILEAGE</Text>
+          <View style={styles.sectionRow}>
+            <Text style={styles.sectionLabel}>MILEAGE</Text>
+            <View style={styles.rangeToggle}>
+              {RANGE_OPTIONS.map((r) => (
+                <TouchableOpacity
+                  key={r.label}
+                  style={[styles.rangeBtn, mileageRange === r.days && styles.rangeBtnActive]}
+                  onPress={() => setMileageRange(r.days)}
+                >
+                  <Text style={[styles.rangeBtnText, mileageRange === r.days && styles.rangeBtnTextActive]}>
+                    {r.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
           <Card style={styles.chartCard}>
             <BarChart data={weeklyMileage} maxValue={maxMileage} barColor={colors.blue} height={80} />
           </Card>
@@ -577,10 +723,7 @@ export default function ProgressScreen() {
             <Text style={styles.emptyText}>No sessions logged yet.</Text>
           </View>
         ) : (
-          <FrequencyHeatmap
-            workoutDays={heatmapWorkoutDays}
-            runDays={heatmapRunDays}
-          />
+          <FrequencyHeatmap workoutDays={heatmapWorkoutDays} runDays={heatmapRunDays} />
         )}
       </Card>
 
@@ -592,9 +735,7 @@ export default function ProgressScreen() {
         ) : prs.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>🏆</Text>
-            <Text style={styles.emptyText}>
-              No PRs yet. Log workouts with weight to track them.
-            </Text>
+            <Text style={styles.emptyText}>No PRs yet. Log workouts with weight to track them.</Text>
           </View>
         ) : (
           prs.map((pr, index) => (
@@ -616,37 +757,27 @@ export default function ProgressScreen() {
                 <Text style={styles.runRecordEmoji}>📏</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.runRecordLabel}>LONGEST RUN</Text>
-                  <Text style={styles.runRecordValue}>
-                    {Number(runRecords.longestRun.distance_mi).toFixed(2)} mi
-                  </Text>
+                  <Text style={styles.runRecordValue}>{Number(runRecords.longestRun.distance_mi).toFixed(2)} mi</Text>
                 </View>
               </View>
             )}
-            {runRecords.longestRun && (runRecords.bestPaceRun || runRecords.mostElevationRun) && (
-              <View style={styles.divider} />
-            )}
+            {runRecords.longestRun && (runRecords.bestPaceRun || runRecords.mostElevationRun) && <View style={styles.divider} />}
             {runRecords.bestPaceRun && (
               <View style={styles.runRecordRow}>
                 <Text style={styles.runRecordEmoji}>⚡</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.runRecordLabel}>BEST PACE</Text>
-                  <Text style={styles.runRecordValue}>
-                    {formatPace(runRecords.bestPaceRun.pace_per_mile_seconds)}
-                  </Text>
+                  <Text style={styles.runRecordValue}>{formatPace(runRecords.bestPaceRun.pace_per_mile_seconds)}</Text>
                 </View>
               </View>
             )}
-            {runRecords.bestPaceRun && runRecords.mostElevationRun && (
-              <View style={styles.divider} />
-            )}
+            {runRecords.bestPaceRun && runRecords.mostElevationRun && <View style={styles.divider} />}
             {runRecords.mostElevationRun && (
               <View style={styles.runRecordRow}>
                 <Text style={styles.runRecordEmoji}>⛰️</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.runRecordLabel}>MOST ELEVATION</Text>
-                  <Text style={styles.runRecordValue}>
-                    {runRecords.mostElevationRun.elevation_ft} ft
-                  </Text>
+                  <Text style={styles.runRecordValue}>{runRecords.mostElevationRun.elevation_ft} ft</Text>
                 </View>
               </View>
             )}
@@ -658,15 +789,11 @@ export default function ProgressScreen() {
       <Text style={styles.sectionLabel}>CONSISTENCY</Text>
       <View style={styles.streakRow}>
         <Card style={[styles.streakCard, { borderColor: colors.gold }]}>
-          <Text style={styles.streakValue}>
-            {weeklyData.filter((d) => d.value > 0).length}
-          </Text>
-          <Text style={styles.streakLabel}>Active Days</Text>
+          <Text style={styles.streakValue}>{streak}</Text>
+          <Text style={styles.streakLabel}>Day Streak 🔥</Text>
         </Card>
         <Card style={[styles.streakCard, { borderColor: colors.blue }]}>
-          <Text style={[styles.streakValue, { color: colors.blue }]}>
-            {prs.length}
-          </Text>
+          <Text style={[styles.streakValue, { color: colors.blue }]}>{prs.length}</Text>
           <Text style={styles.streakLabel}>Tracked PRs</Text>
         </Card>
       </View>
@@ -676,295 +803,89 @@ export default function ProgressScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: 20,
-    paddingBottom: 40,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: 20, paddingBottom: 40 },
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.gold,
-    letterSpacing: 2,
-    marginBottom: 10,
-    marginTop: 8,
+    fontSize: 11, fontWeight: '700', color: colors.gold,
+    letterSpacing: 2, marginBottom: 10, marginTop: 8,
   },
   sectionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 8,
-    marginBottom: 10,
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginTop: 8, marginBottom: 10,
   },
-  rangeToggle: {
-    flexDirection: 'row',
-    gap: 4,
-  },
+  rangeToggle: { flexDirection: 'row', gap: 4 },
   rangeBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
   },
-  rangeBtnActive: {
-    borderColor: colors.gold,
-    backgroundColor: 'rgba(201,168,76,0.12)',
-  },
-  rangeBtnText: {
-    fontSize: 11,
-    color: colors.muted,
-    fontWeight: '700',
-  },
-  rangeBtnTextActive: {
-    color: colors.gold,
-  },
-  weightCard: {
-    marginBottom: 20,
-    padding: 16,
-  },
-  weightInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 16,
-  },
+  rangeBtnActive: { borderColor: colors.gold, backgroundColor: 'rgba(201,168,76,0.12)' },
+  rangeBtnText: { fontSize: 11, color: colors.muted, fontWeight: '700' },
+  rangeBtnTextActive: { color: colors.gold },
+  weightCard: { marginBottom: 20, padding: 16 },
+  weightInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
   weightInput: {
-    flex: 1,
-    backgroundColor: colors.inputBg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: colors.text,
-    fontSize: 15,
+    flex: 1, backgroundColor: colors.inputBg, borderWidth: 1, borderColor: colors.border,
+    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, color: colors.text, fontSize: 15,
   },
-  weightSaveBtn: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    minWidth: 80,
-  },
+  weightSaveBtn: { paddingHorizontal: 20, paddingVertical: 12, minWidth: 80 },
   weightChartLabel: {
-    fontSize: 9,
-    color: colors.muted,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    marginBottom: 8,
+    fontSize: 9, color: colors.muted, fontWeight: '700', letterSpacing: 1.5, marginBottom: 8,
   },
-  weightEmptyText: {
-    color: colors.muted,
-    fontSize: 13,
-    textAlign: 'center',
-    paddingVertical: 8,
-  },
+  weightEmptyText: { color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 8 },
   weightMinMax: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-    paddingHorizontal: 8,
+    flexDirection: 'row', justifyContent: 'space-between', marginTop: 4, paddingHorizontal: 8,
   },
-  weightMinMaxText: {
-    fontSize: 11,
-    color: colors.muted,
+  weightMinMaxText: { fontSize: 11, color: colors.muted },
+  weightHistoryList: { marginTop: 12, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8 },
+  weightHistoryRow: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 6,
+    borderBottomWidth: 1, borderBottomColor: colors.border + '55',
   },
-  chartAxisLabel: {
-    fontSize: 9,
-    color: colors.muted,
-  },
-  chartCard: {
-    marginBottom: 24,
-    paddingVertical: 20,
-  },
+  weightHistoryDate: { flex: 1, fontSize: 12, color: colors.muted },
+  weightHistoryValue: { fontSize: 13, fontWeight: '600', color: colors.text, marginRight: 12 },
+  weightDeleteBtn: { padding: 4, marginLeft: 4 },
+  weightDeleteText: { fontSize: 16, color: colors.muted, fontWeight: '700' },
+  chartAxisLabel: { fontSize: 9, color: colors.muted },
+  chartCard: { marginBottom: 24, paddingVertical: 20 },
   chart: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-around',
-    paddingTop: 16,
+    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-around', paddingTop: 16,
   },
-  barWrapper: {
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    flex: 1,
-  },
-  bar: {
-    borderRadius: 4,
-    marginBottom: 4,
-  },
-  barValue: {
-    fontSize: 9,
-    color: colors.muted,
-    marginBottom: 2,
-  },
-  barLabel: {
-    fontSize: 12,
-    color: colors.muted,
-    marginTop: 4,
-  },
-  loadingText: {
-    color: colors.muted,
-    textAlign: 'center',
-    padding: 20,
-  },
-  emptyState: {
-    alignItems: 'center',
-    padding: 24,
-  },
-  emptyEmoji: {
-    fontSize: 32,
-    marginBottom: 8,
-  },
-  emptyText: {
-    color: colors.muted,
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  // PR rows
-  prRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: 12,
-  },
-  prName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  prDate: {
-    fontSize: 12,
-    color: colors.muted,
-    marginTop: 2,
-  },
-  prWeight: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.gold,
-  },
-  prSetsReps: {
-    fontSize: 11,
-    color: colors.muted,
-    marginTop: 2,
-  },
+  barWrapper: { alignItems: 'center', justifyContent: 'flex-end', flex: 1 },
+  bar: { borderRadius: 4, marginBottom: 4 },
+  barValue: { fontSize: 9, color: colors.muted, marginBottom: 2 },
+  barLabel: { fontSize: 12, color: colors.muted, marginTop: 4 },
+  loadingText: { color: colors.muted, textAlign: 'center', padding: 20 },
+  emptyState: { alignItems: 'center', padding: 24 },
+  emptyEmoji: { fontSize: 32, marginBottom: 8 },
+  emptyText: { color: colors.muted, fontSize: 13, textAlign: 'center' },
+  prRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 12 },
+  prName: { fontSize: 14, fontWeight: '600', color: colors.text },
+  prDate: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  prWeight: { fontSize: 16, fontWeight: '700', color: colors.gold },
+  prSetsReps: { fontSize: 11, color: colors.muted, marginTop: 2 },
   strengthBadge: {
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginTop: 4,
+    alignSelf: 'flex-start', borderWidth: 1, borderRadius: 4,
+    paddingHorizontal: 6, paddingVertical: 2, marginTop: 4,
   },
-  strengthBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-  },
-  // Heatmap
-  heatmapCard: {
-    marginBottom: 24,
-    padding: 12,
-  },
-  heatmapLegend: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 10,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 3,
-  },
-  legendText: {
-    fontSize: 10,
-    color: colors.muted,
-  },
-  heatmapDowRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  heatmapWeekLabel: {
-    width: 44,
-    fontSize: 8,
-    color: colors.muted,
-    textAlign: 'right',
-    paddingRight: 4,
-  },
-  heatmapDow: {
-    fontSize: 8,
-    color: colors.muted,
-    textAlign: 'center',
-    marginHorizontal: 1,
-  },
-  heatmapRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 3,
-  },
-  heatmapCell: {
-    borderRadius: 2,
-    marginHorizontal: 1,
-  },
-  // Run records
-  runRecordsCard: {
-    marginBottom: 24,
-  },
-  runRecordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    gap: 12,
-  },
-  runRecordEmoji: {
-    fontSize: 24,
-    width: 36,
-    textAlign: 'center',
-  },
-  runRecordLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: colors.muted,
-    letterSpacing: 1.5,
-    marginBottom: 2,
-  },
-  runRecordValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.blue,
-  },
-  // Streak / consistency
-  streakRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24,
-  },
-  streakCard: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 20,
-  },
-  streakValue: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: colors.gold,
-    marginBottom: 4,
-  },
-  streakLabel: {
-    fontSize: 11,
-    color: colors.muted,
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
+  strengthBadgeText: { fontSize: 9, fontWeight: '700', letterSpacing: 1 },
+  divider: { height: 1, backgroundColor: colors.border },
+  heatmapCard: { marginBottom: 24, padding: 12 },
+  heatmapLegend: { flexDirection: 'row', gap: 16, marginBottom: 10 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 10, height: 10, borderRadius: 3 },
+  legendText: { fontSize: 10, color: colors.muted },
+  heatmapDowRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  heatmapWeekLabel: { width: 44, fontSize: 8, color: colors.muted, textAlign: 'right', paddingRight: 4 },
+  heatmapDow: { fontSize: 8, color: colors.muted, textAlign: 'center', marginHorizontal: 1 },
+  heatmapRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 3 },
+  heatmapCell: { borderRadius: 2, marginHorizontal: 1 },
+  runRecordsCard: { marginBottom: 24 },
+  runRecordRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12 },
+  runRecordEmoji: { fontSize: 24, width: 36, textAlign: 'center' },
+  runRecordLabel: { fontSize: 9, fontWeight: '700', color: colors.muted, letterSpacing: 1.5, marginBottom: 2 },
+  runRecordValue: { fontSize: 18, fontWeight: '700', color: colors.blue },
+  streakRow: { flexDirection: 'row', gap: 12, marginBottom: 24 },
+  streakCard: { flex: 1, alignItems: 'center', paddingVertical: 20 },
+  streakValue: { fontSize: 32, fontWeight: '800', color: colors.gold, marginBottom: 4 },
+  streakLabel: { fontSize: 11, color: colors.muted, letterSpacing: 1, textAlign: 'center' },
 });

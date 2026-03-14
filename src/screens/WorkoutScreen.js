@@ -263,13 +263,14 @@ function ExerciseCard({ exercise, onAddSet, onUpdateSet, onRemoveSet, onUpdateNo
   );
 }
 
-export default function WorkoutScreen() {
-  const { weightLabel } = useProfile();
+export default function WorkoutScreen({ navigation, route }) {
+  const { weightLabel, profile } = useProfile();
   const [workoutName, setWorkoutName] = useState('');
   const [exercises, setExercises] = useState([]);
   const [newExerciseName, setNewExerciseName] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedWorkoutId, setSavedWorkoutId] = useState(null);
+  const [aiGenerated, setAiGenerated] = useState(false);
 
   // Rest timer
   const [restTimerVisible, setRestTimerVisible] = useState(false);
@@ -285,6 +286,24 @@ export default function WorkoutScreen() {
     timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(timerRef.current);
   }, []);
+
+  // Handle AI-generated workout pre-fill from route params
+  useEffect(() => {
+    const aiWorkout = route?.params?.aiWorkout;
+    if (aiWorkout) {
+      setWorkoutName(aiWorkout.workout_name || '');
+      setExercises(
+        (aiWorkout.exercises || []).map((ex) => ({
+          id: null,
+          name: ex.name,
+          sets: [{ weight: ex.weight_lbs > 0 ? String(ex.weight_lbs) : '', reps: String(ex.reps || ''), completed: false }],
+          notes: ex.notes || '',
+          lastPerformance: null,
+        }))
+      );
+      setAiGenerated(true);
+    }
+  }, [route?.params?.aiWorkout]);
 
   // Load today's workout if exists
   useEffect(() => {
@@ -549,8 +568,25 @@ export default function WorkoutScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+        {/* AI Generate button — PRO only */}
+        {profile?.subscription_tier === 'pro' && (
+          <TouchableOpacity
+            style={styles.aiGenerateBtn}
+            onPress={() => navigation?.navigate('AIWorkout')}
+          >
+            <Text style={styles.aiGenerateBtnText}>⚛ AI GENERATE</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Workout name */}
-        <Text style={styles.sectionLabel}>SESSION NAME</Text>
+        <View style={styles.sessionNameRow}>
+          <Text style={[styles.sectionLabel, { marginBottom: 0 }]}>SESSION NAME</Text>
+          {aiGenerated && (
+            <View style={styles.aiGeneratedBadge}>
+              <Text style={styles.aiGeneratedBadgeText}>⚛ AI-generated</Text>
+            </View>
+          )}
+        </View>
         <TextInput
           style={styles.nameInput}
           value={workoutName}
@@ -661,6 +697,44 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  aiGenerateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(201,168,76,0.1)',
+    borderWidth: 1,
+    borderColor: colors.gold,
+    borderRadius: 10,
+    paddingVertical: 12,
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  aiGenerateBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.gold,
+    letterSpacing: 1.5,
+  },
+  sessionNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    marginTop: 20,
+  },
+  aiGeneratedBadge: {
+    backgroundColor: 'rgba(201,168,76,0.12)',
+    borderWidth: 1,
+    borderColor: colors.gold,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  aiGeneratedBadgeText: {
+    fontSize: 10,
+    color: colors.gold,
+    fontWeight: '700',
   },
   timerBar: {
     flexDirection: 'row',

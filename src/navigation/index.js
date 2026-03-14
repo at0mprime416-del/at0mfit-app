@@ -18,6 +18,7 @@ import ProgressScreen from '../screens/ProgressScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import NutritionScreen from '../screens/NutritionScreen';
 import LeaderboardScreen from '../screens/LeaderboardScreen';
+import AIWorkoutScreen from '../screens/AIWorkoutScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -127,6 +128,15 @@ function MainTabs() {
         }}
       />
       <Tab.Screen
+        name="Calendar"
+        component={CalendarScreen}
+        options={{
+          title: 'CALENDAR',
+          tabBarLabel: 'Calendar',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📅" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
         name="Profile"
         component={ProfileScreen}
         options={{
@@ -185,6 +195,15 @@ export default function RootNavigator() {
           name="Main"
           component={MainTabs}
           options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="AIWorkout"
+          component={AIWorkoutScreen}
+          options={{
+            headerShown: true,
+            title: '⚛ AI COACH',
+            headerBackTitle: 'Back',
+          }}
         />
       </Stack.Navigator>
     </NavigationContainer>
