@@ -42,6 +42,8 @@ export default function ProfileScreen({ navigation }) {
   const [metricHeightFt, setMetricHeightFt] = useState('');
   const [metricHeightIn, setMetricHeightIn] = useState('');
   const [metricAge, setMetricAge] = useState('');
+  const [metricWakeTime, setMetricWakeTime] = useState('06:00');
+  const [metricSleepTime, setMetricSleepTime] = useState('22:00');
   const [savingMetrics, setSavingMetrics] = useState(false);
 
   // Units toggle
@@ -73,6 +75,8 @@ export default function ProfileScreen({ navigation }) {
       setMetricHeightIn(String(prof.height_inches % 12));
     }
     if (prof?.age) setMetricAge(String(prof.age));
+    if (prof?.wake_time) setMetricWakeTime(prof.wake_time);
+    if (prof?.sleep_time) setMetricSleepTime(prof.sleep_time);
 
     // Total stats
     const { data: workouts } = await supabase
@@ -128,6 +132,8 @@ export default function ProfileScreen({ navigation }) {
         weight_lbs: parseFloat(metricWeight) || null,
         height_inches: totalInches > 0 ? totalInches : null,
         age: parseInt(metricAge) || null,
+        wake_time: metricWakeTime || '06:00',
+        sleep_time: metricSleepTime || '22:00',
       })
       .eq('id', user.id);
 
@@ -182,6 +188,19 @@ export default function ProfileScreen({ navigation }) {
             {(profile?.name || 'A').charAt(0).toUpperCase()}
           </Text>
         </View>
+        {/* Subscription tier badge */}
+        <View style={[
+          styles.tierBadge,
+          profile?.subscription_tier === 'pro' ? styles.tierBadgePro : styles.tierBadgeFree,
+        ]}>
+          <Text style={[
+            styles.tierBadgeText,
+            profile?.subscription_tier === 'pro' ? styles.tierBadgeTextPro : styles.tierBadgeTextFree,
+          ]}>
+            {profile?.subscription_tier === 'pro' ? 'PRO' : 'FREE'}
+          </Text>
+        </View>
+
         {editing ? (
           <View style={styles.editRow}>
             <TextInput
@@ -282,6 +301,24 @@ export default function ProfileScreen({ navigation }) {
               placeholderTextColor={colors.muted}
               keyboardType="numeric"
             />
+            <Text style={styles.metricLabel}>WAKE TIME (HH:MM)</Text>
+            <TextInput
+              style={styles.metricInput}
+              value={metricWakeTime}
+              onChangeText={setMetricWakeTime}
+              placeholder="06:00"
+              placeholderTextColor={colors.muted}
+              keyboardType="numbers-and-punctuation"
+            />
+            <Text style={styles.metricLabel}>SLEEP TIME (HH:MM)</Text>
+            <TextInput
+              style={styles.metricInput}
+              value={metricSleepTime}
+              onChangeText={setMetricSleepTime}
+              placeholder="22:00"
+              placeholderTextColor={colors.muted}
+              keyboardType="numbers-and-punctuation"
+            />
             <GoldButton
               title="SAVE METRICS"
               onPress={saveMetrics}
@@ -290,22 +327,38 @@ export default function ProfileScreen({ navigation }) {
             />
           </View>
         ) : (
-          <View style={styles.metricsDisplay}>
-            <View style={styles.metricItem}>
-              <Text style={styles.metricValue}>
-                {profile?.weight_lbs ? `${profile.weight_lbs} lbs` : '—'}
-              </Text>
-              <Text style={styles.metricItemLabel}>WEIGHT</Text>
+          <View>
+            <View style={styles.metricsDisplay}>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricValue}>
+                  {profile?.weight_lbs ? `${profile.weight_lbs} lbs` : '—'}
+                </Text>
+                <Text style={styles.metricItemLabel}>WEIGHT</Text>
+              </View>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricValue}>{heightDisplay()}</Text>
+                <Text style={styles.metricItemLabel}>HEIGHT</Text>
+              </View>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricValue}>
+                  {profile?.age || '—'}
+                </Text>
+                <Text style={styles.metricItemLabel}>AGE</Text>
+              </View>
             </View>
-            <View style={styles.metricItem}>
-              <Text style={styles.metricValue}>{heightDisplay()}</Text>
-              <Text style={styles.metricItemLabel}>HEIGHT</Text>
-            </View>
-            <View style={styles.metricItem}>
-              <Text style={styles.metricValue}>
-                {profile?.age || '—'}
-              </Text>
-              <Text style={styles.metricItemLabel}>AGE</Text>
+            <View style={styles.metricsDisplay}>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricValue}>
+                  {profile?.wake_time || '06:00'}
+                </Text>
+                <Text style={styles.metricItemLabel}>WAKE</Text>
+              </View>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricValue}>
+                  {profile?.sleep_time || '22:00'}
+                </Text>
+                <Text style={styles.metricItemLabel}>SLEEP</Text>
+              </View>
             </View>
           </View>
         )}
@@ -437,6 +490,32 @@ const styles = StyleSheet.create({
     fontSize: 34,
     fontWeight: '800',
     color: colors.background,
+  },
+  tierBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  tierBadgePro: {
+    backgroundColor: 'rgba(201,168,76,0.15)',
+    borderColor: colors.gold,
+  },
+  tierBadgeFree: {
+    backgroundColor: 'rgba(136,136,136,0.12)',
+    borderColor: colors.muted,
+  },
+  tierBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2,
+  },
+  tierBadgeTextPro: {
+    color: colors.gold,
+  },
+  tierBadgeTextFree: {
+    color: colors.muted,
   },
   profileName: {
     fontSize: 22,

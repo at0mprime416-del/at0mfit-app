@@ -251,13 +251,20 @@ export default function HomeScreen({ navigation }) {
       {/* Greeting */}
       <View style={styles.greetingRow}>
         <View>
-          <Text style={styles.greetingText}>
-            {greeting()},{' '}
-            <Text style={styles.greetingName}>
-              {profile?.name || 'Operator'}
-            </Text>{' '}
-            👊
-          </Text>
+          <View style={styles.greetingNameRow}>
+            <Text style={styles.greetingText}>
+              {greeting()},{' '}
+              <Text style={styles.greetingName}>
+                {profile?.name || 'Operator'}
+              </Text>{' '}
+              👊
+            </Text>
+            {profile?.subscription_tier === 'pro' && (
+              <View style={styles.proBadge}>
+                <Text style={styles.proBadgeText}>PRO</Text>
+              </View>
+            )}
+          </View>
           <Text style={styles.greetingDate}>
             {new Date().toLocaleDateString('en-US', {
               weekday: 'long',
@@ -316,6 +323,28 @@ export default function HomeScreen({ navigation }) {
           )}
         </Card>
       ) : null}
+
+      {/* Upgrade card for FREE tier */}
+      {profile?.subscription_tier !== 'pro' && (
+        <Card style={styles.upgradeCard}>
+          <View style={styles.upgradeRow}>
+            <View style={styles.upgradeText}>
+              <Text style={styles.upgradeTitle}>UPGRADE TO PRO</Text>
+              <Text style={styles.upgradeSubtitle}>
+                Unlock carb cycling, IF timing, advanced training protocols
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.upgradeBtn}
+              onPress={() =>
+                Alert.alert('Pro Subscription', 'Pro subscription coming soon! 🚀')
+              }
+            >
+              <Text style={styles.upgradeBtnText}>UPGRADE</Text>
+            </TouchableOpacity>
+          </View>
+        </Card>
+      )}
 
       {/* Today's Workout */}
       <Text style={styles.sectionLabel}>TODAY'S SESSION</Text>
@@ -439,6 +468,13 @@ const styles = StyleSheet.create({
     marginBottom: 28,
     marginTop: 8,
   },
+  greetingNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 0,
+  },
   greetingText: {
     fontSize: 22,
     color: colors.text,
@@ -451,6 +487,59 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     marginTop: 4,
+  },
+  proBadge: {
+    backgroundColor: 'rgba(201,168,76,0.2)',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: colors.gold,
+  },
+  proBadgeText: {
+    color: colors.gold,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+  upgradeCard: {
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    backgroundColor: 'rgba(201,168,76,0.06)',
+  },
+  upgradeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  upgradeText: {
+    flex: 1,
+  },
+  upgradeTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.gold,
+    letterSpacing: 1.5,
+    marginBottom: 3,
+  },
+  upgradeSubtitle: {
+    fontSize: 11,
+    color: colors.muted,
+    lineHeight: 16,
+  },
+  upgradeBtn: {
+    borderWidth: 1,
+    borderColor: colors.gold,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  upgradeBtnText: {
+    color: colors.gold,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   atomBadge: {
     fontSize: 32,

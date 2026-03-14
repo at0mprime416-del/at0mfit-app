@@ -11,6 +11,7 @@ import LoginScreen from '../screens/LoginScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import HomeScreen from '../screens/HomeScreen';
+import CalendarScreen from '../screens/CalendarScreen';
 import WorkoutScreen from '../screens/WorkoutScreen';
 import RunScreen from '../screens/RunScreen';
 import ProgressScreen from '../screens/ProgressScreen';
@@ -72,6 +73,15 @@ function MainTabs() {
           title: 'AT0M FIT',
           tabBarLabel: 'Home',
           tabBarIcon: ({ focused }) => <TabIcon emoji="🏠" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="Calendar"
+        component={CalendarScreen}
+        options={{
+          title: 'CALENDAR',
+          tabBarLabel: 'Calendar',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📅" focused={focused} />,
         }}
       />
       <Tab.Screen

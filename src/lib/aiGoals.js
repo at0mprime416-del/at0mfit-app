@@ -5,12 +5,22 @@ const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
 
 /**
  * Fetch recent activity, call GPT-4o-mini, upsert into daily_goals, return goal.
+ * Supports FREE and PRO tiers with different AI prompts.
  */
 export async function generateDailyGoal(userId) {
   const today = new Date().toISOString().split('T')[0];
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 14);
   const cutoffStr = cutoff.toISOString().split('T')[0];
+
+  // --- Fetch profile (including tier, wake/sleep times) ---
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('subscription_tier, wake_time, sleep_time, weight_lbs, age, goal')
+    .eq('id', userId)
+    .single();
+
+  const tier = profile?.subscription_tier || 'free';
 
   // --- Fetch last 14 days of runs ---
   const { data: runs } = await supabase
@@ -34,12 +44,26 @@ export async function generateDailyGoal(userId) {
     exercise_count: w.exercises?.length || 0,
   }));
 
-  // --- Build prompt ---
-  const systemPrompt =
-    'You are a fitness coach AI for At0m Fit. Analyze the user\'s recent activity and set ONE moderate, achievable daily goal. The goal should be slightly challenging but not overreaching — progressive overload principle. Consider rest days. Return JSON only with these fields: goal_type (one of: run, workout, rest, mobility), goal_description (short human-readable string), target_value (number or null), target_unit (miles|minutes|sessions or null), tokens_reward (integer 5-20), ai_reasoning (1-2 sentences why).';
+  // --- Build prompt based on tier ---
+  let systemPrompt;
+
+  if (tier === 'pro') {
+    systemPrompt =
+      'You are an elite performance coach AI. Analyze the user\'s recent training load, body weight trend, and fitness history. Set ONE advanced, periodized daily goal. You have access to: carb cycling protocols (high/moderate/low carb days tied to training type), intermittent fasting windows (calculate optimal eating window based on wake_time and goal), recovery optimization (deload weeks, active recovery, mobility). Be specific with timing. Examples: \'High carb day — eat within 8-hour window starting 1 hour after wake (7am-3pm). Pre-workout meal 30min before training.\' Return JSON: { goal_type, goal_description, target_value, target_unit, tokens_reward: 20, ai_reasoning, nutrition_recommendation: { carb_day_type, eating_window_start, eating_window_end }, recovery_recommendation: { soreness_expected, mobility_recommended } }';
+  } else {
+    systemPrompt =
+      'You are a basic fitness coach AI. Give the user ONE simple, motivating daily goal. Keep it accessible and beginner-friendly. No advanced protocols. Focus on: basic cardio, simple workouts, staying active, hydration. Return JSON: { goal_type, goal_description, target_value, target_unit, tokens_reward: 10, ai_reasoning }';
+  }
 
   const userMessage = JSON.stringify({
     today,
+    user_profile: {
+      wake_time: profile?.wake_time || '06:00',
+      sleep_time: profile?.sleep_time || '22:00',
+      weight_lbs: profile?.weight_lbs,
+      age: profile?.age,
+      goal: profile?.goal,
+    },
     recent_runs: runs || [],
     recent_workouts: workoutSummary,
   });
@@ -60,7 +84,7 @@ export async function generateDailyGoal(userId) {
           { role: 'user', content: userMessage },
         ],
         temperature: 0.7,
-        max_tokens: 300,
+        max_tokens: 400,
         response_format: { type: 'json_object' },
       }),
     });
@@ -74,15 +98,71 @@ export async function generateDailyGoal(userId) {
     goalData = JSON.parse(raw);
   } catch (err) {
     console.warn('AI goal generation failed, using fallback:', err.message);
-    // Fallback goal if API fails
-    goalData = {
-      goal_type: 'workout',
-      goal_description: 'Complete a full-body strength session',
-      target_value: 45,
-      target_unit: 'minutes',
-      tokens_reward: 10,
-      ai_reasoning: 'Consistent training builds long-term results.',
-    };
+    if (tier === 'pro') {
+      goalData = {
+        goal_type: 'workout',
+        goal_description: 'High intensity strength session — prioritize compound lifts',
+        target_value: 60,
+        target_unit: 'minutes',
+        tokens_reward: 20,
+        ai_reasoning: 'Progressive overload drives elite performance.',
+        nutrition_recommendation: {
+          carb_day_type: 'high',
+          eating_window_start: '07:00',
+          eating_window_end: '15:00',
+        },
+        recovery_recommendation: {
+          soreness_expected: 3,
+          mobility_recommended: true,
+        },
+      };
+    } else {
+      goalData = {
+        goal_type: 'workout',
+        goal_description: 'Complete a full-body strength session',
+        target_value: 45,
+        target_unit: 'minutes',
+        tokens_reward: 10,
+        ai_reasoning: 'Consistent training builds long-term results.',
+      };
+    }
+  }
+
+  // --- For PRO: upsert nutrition + recovery recommendations ---
+  if (tier === 'pro') {
+    const nutritionRec = goalData.nutrition_recommendation;
+    const recoveryRec = goalData.recovery_recommendation;
+
+    if (nutritionRec) {
+      await supabase
+        .from('nutrition_logs')
+        .upsert(
+          {
+            user_id: userId,
+            date: today,
+            carb_day_type: nutritionRec.carb_day_type ?? null,
+            eating_window_start: nutritionRec.eating_window_start ?? null,
+            eating_window_end: nutritionRec.eating_window_end ?? null,
+          },
+          { onConflict: 'user_id,date' }
+        );
+    }
+
+    if (recoveryRec) {
+      // Only upsert fields that don't already exist (don't overwrite user-logged sleep hours)
+      await supabase
+        .from('recovery_logs')
+        .upsert(
+          {
+            user_id: userId,
+            date: today,
+            notes: recoveryRec.mobility_recommended
+              ? 'AI: Mobility work recommended today.'
+              : null,
+          },
+          { onConflict: 'user_id,date' }
+        );
+    }
   }
 
   // --- Upsert into daily_goals ---
