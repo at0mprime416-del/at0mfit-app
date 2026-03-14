@@ -9,6 +9,7 @@ import { colors } from '../theme/colors';
 import SplashScreen from '../screens/SplashScreen';
 import LoginScreen from '../screens/LoginScreen';
 import SignUpScreen from '../screens/SignUpScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import HomeScreen from '../screens/HomeScreen';
 import WorkoutScreen from '../screens/WorkoutScreen';
 import RunScreen from '../screens/RunScreen';
@@ -132,6 +133,15 @@ export default function RootNavigator() {
           options={{
             headerShown: true,
             title: 'CREATE ACCOUNT',
+            headerBackTitle: 'Back',
+          }}
+        />
+        <Stack.Screen
+          name="ForgotPassword"
+          component={ForgotPasswordScreen}
+          options={{
+            headerShown: true,
+            title: 'RESET PASSWORD',
             headerBackTitle: 'Back',
           }}
         />

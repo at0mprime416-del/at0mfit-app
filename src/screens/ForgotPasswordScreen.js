@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   StyleSheet,
-  TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -14,26 +13,31 @@ import { colors } from '../theme/colors';
 import GoldButton from '../components/GoldButton';
 import { supabase } from '../lib/supabase';
 
-export default function LoginScreen({ navigation }) {
+export default function ForgotPasswordScreen({ navigation }) {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Missing fields', 'Enter your email and password.');
+  const handleReset = async () => {
+    if (!email.trim()) {
+      Alert.alert('Missing email', 'Enter your email address to reset your password.');
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    });
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
     setLoading(false);
+
     if (error) {
-      Alert.alert('Login failed', error.message);
+      const msg =
+        error.message?.includes('rate limit')
+          ? 'Too many requests. Wait a moment before trying again.'
+          : error.message || 'Something went wrong. Try again.';
+      Alert.alert('Error', msg);
     } else {
-      navigation.replace('Main');
+      Alert.alert(
+        'Email sent',
+        'Check your email for a reset link.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
     }
   };
 
@@ -49,8 +53,10 @@ export default function LoginScreen({ navigation }) {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.atomIcon}>⚛</Text>
-          <Text style={styles.title}>AT0M FIT</Text>
-          <Text style={styles.subtitle}>Welcome back, operator.</Text>
+          <Text style={styles.title}>RESET PASSWORD</Text>
+          <Text style={styles.subtitle}>
+            Enter your email and we'll send a reset link.
+          </Text>
         </View>
 
         {/* Form */}
@@ -67,40 +73,12 @@ export default function LoginScreen({ navigation }) {
             autoCorrect={false}
           />
 
-          <Text style={styles.label}>PASSWORD</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="••••••••"
-            placeholderTextColor={colors.muted}
-            secureTextEntry
-            autoCapitalize="none"
-          />
-
           <GoldButton
-            title="SIGN IN"
-            onPress={handleLogin}
+            title="SEND RESET EMAIL"
+            onPress={handleReset}
             loading={loading}
             style={styles.button}
           />
-
-          <TouchableOpacity
-            onPress={() => navigation.navigate('ForgotPassword')}
-            style={styles.forgotRow}
-          >
-            <Text style={styles.forgotText}>Forgot password?</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => navigation.navigate('SignUp')}
-            style={styles.linkRow}
-          >
-            <Text style={styles.linkText}>
-              No account?{' '}
-              <Text style={styles.link}>Create one →</Text>
-            </Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -138,6 +116,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.muted,
     letterSpacing: 1,
+    textAlign: 'center',
   },
   form: {
     gap: 4,
@@ -162,25 +141,5 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 28,
-  },
-  forgotRow: {
-    alignItems: 'center',
-    marginTop: 14,
-  },
-  forgotText: {
-    color: colors.muted,
-    fontSize: 13,
-  },
-  linkRow: {
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  linkText: {
-    color: colors.muted,
-    fontSize: 14,
-  },
-  link: {
-    color: colors.gold,
-    fontWeight: '600',
   },
 });

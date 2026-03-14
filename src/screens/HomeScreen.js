@@ -5,22 +5,76 @@ import {
   ScrollView,
   StyleSheet,
   RefreshControl,
+  TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import Card from '../components/Card';
 import GoldButton from '../components/GoldButton';
 import { supabase } from '../lib/supabase';
 import { formatPace } from './RunScreen';
+import { generateDailyGoal, markGoalComplete } from '../lib/aiGoals';
+
+// ─── Rotating Quotes ──────────────────────────────────────────────────────────
+const QUOTES = [
+  { text: "You are not what you think you are. You are what you do.", author: "David Goggins" },
+  { text: "The most important thing is to try and inspire people so that they can be great in whatever they want to do.", author: "Kobe Bryant" },
+  { text: "Don't count the days; make the days count.", author: "Muhammad Ali" },
+  { text: "I hated every minute of training, but I said, 'Don't quit. Suffer now and live the rest of your life as a champion.'", author: "Muhammad Ali" },
+  { text: "Do not pray for an easy life. Pray for the strength to endure a difficult one.", author: "Bruce Lee" },
+  { text: "Absorb what is useful, discard what is useless, and add what is specifically your own.", author: "Bruce Lee" },
+  { text: "Discipline equals freedom.", author: "Jocko Willink" },
+  { text: "Good. Now get back to work.", author: "Jocko Willink" },
+  { text: "The more you sweat in training, the less you bleed in combat.", author: "Navy SEAL Saying" },
+  { text: "A champion is defined not by their wins but by how they can recover when they fall.", author: "Serena Williams" },
+  { text: "The only way to prove you are a good sport is to lose.", author: "Ernie Banks" },
+  { text: "I told myself I was going to make it — and I did.", author: "Jesse Owens" },
+  { text: "We all have dreams. But in order to make dreams come into reality, it takes an awful lot of determination, dedication, self-discipline, and effort.", author: "Jesse Owens" },
+  { text: "Hard days are the best because that's when champions are made.", author: "Gabby Douglas" },
+  { text: "Make sure your worst enemy doesn't live between your own two ears.", author: "Laird Hamilton" },
+  { text: "It's not about perfect. It's about effort.", author: "Jillian Michaels" },
+  { text: "Some people want it to happen, some wish it would happen, others make it happen.", author: "Michael Jordan" },
+  { text: "Pain is temporary. It may last a minute, or an hour, or a day, or a year, but eventually it will subside and something else will take its place. If I quit, however, it lasts forever.", author: "Eric Thomas" },
+  { text: "Get comfortable being uncomfortable.", author: "Jocko Willink" },
+  { text: "You don't rise to the level of your goals. You fall to the level of your systems.", author: "James Clear" },
+  { text: "The war is won in the mind before it's won on the ground.", author: "Special Operations Doctrine" },
+  { text: "Somewhere, someone is training when you are not. When you race him, he will win.", author: "Tom Fleming" },
+  { text: "Strength does not come from the physical capacity. It comes from an indomitable will.", author: "Mahatma Gandhi" },
+  { text: "Push yourself because no one else is going to do it for you.", author: "Unknown Operator" },
+  { text: "The body achieves what the mind believes.", author: "Napoleon Hill" },
+];
+
+function getDailyQuote() {
+  const day = new Date().getDate();
+  return QUOTES[day % QUOTES.length];
+}
+
+// ─── Goal helpers ─────────────────────────────────────────────────────────────
+function goalEmoji(type) {
+  switch (type) {
+    case 'run': return '🏃';
+    case 'workout': return '🏋️';
+    case 'rest': return '😴';
+    case 'mobility': return '🧘';
+    default: return '🎯';
+  }
+}
 
 export default function HomeScreen({ navigation }) {
   const [profile, setProfile] = useState(null);
   const [todayWorkout, setTodayWorkout] = useState(null);
   const [weeklyStats, setWeeklyStats] = useState({ workouts: 0, exercises: 0, weeklyMiles: 0, lastRun: null });
+  const [streak, setStreak] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [dailyGoal, setDailyGoal] = useState(null);
+  const [goalLoading, setGoalLoading] = useState(false);
+  const [teamMembership, setTeamMembership] = useState(null);
+  const [userId, setUserId] = useState(null);
 
   const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
+    setUserId(user.id);
 
     // Fetch profile
     const { data: prof } = await supabase
@@ -84,6 +138,70 @@ export default function HomeScreen({ navigation }) {
         lastRun: lastRunData || null,
       });
     }
+
+    // ─── Real Streak Calculation ─────────────────────────────────────────────
+    const { data: allWorkouts } = await supabase
+      .from('workouts')
+      .select('date')
+      .eq('user_id', user.id)
+      .order('date', { ascending: false });
+
+    if (allWorkouts && allWorkouts.length > 0) {
+      // Build a Set of days that have workouts
+      const workoutDays = new Set(allWorkouts.map((w) => w.date));
+
+      let count = 0;
+      const cursor = new Date();
+      // If today has no workout, start checking from yesterday (streak not broken yet)
+      if (!workoutDays.has(today)) {
+        cursor.setDate(cursor.getDate() - 1);
+      }
+
+      // Walk backwards counting consecutive days
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const dayStr = cursor.toISOString().split('T')[0];
+        if (workoutDays.has(dayStr)) {
+          count++;
+          cursor.setDate(cursor.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+      setStreak(count);
+    } else {
+      setStreak(0);
+    }
+
+    // ─── Team membership ─────────────────────────────────────────────────────
+    const { data: membership } = await supabase
+      .from('team_members')
+      .select('id, team_id, tokens_contributed, teams(name)')
+      .eq('user_id', user.id)
+      .single();
+    setTeamMembership(membership || null);
+
+    // ─── AI Daily Goal ────────────────────────────────────────────────────────
+    const { data: existingGoal } = await supabase
+      .from('daily_goals')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('date', today)
+      .single();
+
+    if (existingGoal) {
+      setDailyGoal(existingGoal);
+    } else {
+      setGoalLoading(true);
+      try {
+        const newGoal = await generateDailyGoal(user.id);
+        setDailyGoal(newGoal);
+      } catch (err) {
+        console.warn('Could not generate daily goal:', err);
+      } finally {
+        setGoalLoading(false);
+      }
+    }
   };
 
   useEffect(() => {
@@ -96,12 +214,27 @@ export default function HomeScreen({ navigation }) {
     setRefreshing(false);
   };
 
+  const handleMarkComplete = async () => {
+    if (!dailyGoal || !userId) return;
+    const success = await markGoalComplete(dailyGoal.id, userId);
+    if (success) {
+      setDailyGoal((prev) => ({ ...prev, completed: true, completed_at: new Date().toISOString() }));
+    } else {
+      Alert.alert('Error', 'Could not mark goal complete. Try again.');
+    }
+  };
+
   const greeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good morning';
     if (hour < 17) return 'Good afternoon';
     return 'Good evening';
   };
+
+  const streakColor =
+    streak >= 7 ? colors.green : streak >= 3 ? colors.gold : colors.text;
+
+  const quote = getDailyQuote();
 
   return (
     <ScrollView
@@ -135,6 +268,54 @@ export default function HomeScreen({ navigation }) {
         </View>
         <Text style={styles.atomBadge}>⚛</Text>
       </View>
+
+      {/* TODAY'S GOAL */}
+      <Text style={styles.sectionLabel}>TODAY'S GOAL</Text>
+      {goalLoading ? (
+        <Card style={styles.goalCard}>
+          <Text style={styles.goalLoadingText}>⚡ AI is setting your goal…</Text>
+        </Card>
+      ) : dailyGoal ? (
+        <Card style={styles.goalCard}>
+          <View style={styles.goalHeader}>
+            <Text style={styles.goalEmoji}>{goalEmoji(dailyGoal.goal_type)}</Text>
+            <View style={styles.goalHeaderText}>
+              <Text style={styles.goalDescription}>{dailyGoal.goal_description}</Text>
+              {dailyGoal.target_value != null && (
+                <Text style={styles.goalTarget}>
+                  {Number(dailyGoal.target_value).toFixed(
+                    dailyGoal.target_unit === 'miles' ? 1 : 0
+                  )}{' '}
+                  {dailyGoal.target_unit}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.goalMeta}>
+            <Text style={styles.goalTokens}>+{dailyGoal.tokens_reward} tokens</Text>
+            {teamMembership?.teams?.name && (
+              <Text style={styles.goalTeam}>→ {teamMembership.teams.name}</Text>
+            )}
+          </View>
+
+          {dailyGoal.ai_reasoning ? (
+            <Text style={styles.goalReasoning}>{dailyGoal.ai_reasoning}</Text>
+          ) : null}
+
+          {dailyGoal.completed ? (
+            <View style={styles.completedBadge}>
+              <Text style={styles.completedText}>✓ COMPLETED</Text>
+            </View>
+          ) : (
+            <GoldButton
+              title="MARK COMPLETE"
+              onPress={handleMarkComplete}
+              style={styles.cardButton}
+            />
+          )}
+        </Card>
+      ) : null}
 
       {/* Today's Workout */}
       <Text style={styles.sectionLabel}>TODAY'S SESSION</Text>
@@ -185,10 +366,10 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.statLabel}>Exercises</Text>
         </Card>
         <Card style={styles.statCard}>
-          <Text style={[styles.statValue, { color: colors.blue }]}>
-            {weeklyStats.workouts >= 4 ? '🔥' : '📈'}
+          <Text style={[styles.statValue, { color: streakColor }]}>
+            {streak}
           </Text>
-          <Text style={styles.statLabel}>Streak</Text>
+          <Text style={styles.statLabel}>Day Streak</Text>
         </Card>
         <Card style={styles.statCard}>
           <Text style={[styles.statValue, { color: colors.blue }]}>
@@ -233,12 +414,10 @@ export default function HomeScreen({ navigation }) {
         </>
       )}
 
-      {/* Motivational quote */}
+      {/* Motivational quote — rotates daily */}
       <Card style={styles.quoteCard}>
-        <Text style={styles.quoteText}>
-          "Discipline is the bridge between goals and accomplishment."
-        </Text>
-        <Text style={styles.quoteAuthor}>— Jim Rohn</Text>
+        <Text style={styles.quoteText}>"{quote.text}"</Text>
+        <Text style={styles.quoteAuthor}>— {quote.author}</Text>
       </Card>
     </ScrollView>
   );
@@ -284,6 +463,74 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     marginBottom: 10,
   },
+  // Goal card
+  goalCard: {
+    marginBottom: 24,
+  },
+  goalLoadingText: {
+    color: colors.muted,
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 8,
+  },
+  goalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 10,
+  },
+  goalEmoji: {
+    fontSize: 32,
+  },
+  goalHeaderText: {
+    flex: 1,
+  },
+  goalDescription: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  goalTarget: {
+    fontSize: 14,
+    color: colors.muted,
+  },
+  goalMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  goalTokens: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.gold,
+  },
+  goalTeam: {
+    fontSize: 13,
+    color: colors.muted,
+  },
+  goalReasoning: {
+    fontSize: 12,
+    color: colors.muted,
+    fontStyle: 'italic',
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  completedBadge: {
+    backgroundColor: 'rgba(57,255,20,0.15)',
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  completedText: {
+    color: colors.green,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  // Workout card
   workoutCard: {
     marginBottom: 24,
   },
