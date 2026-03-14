@@ -11,6 +11,7 @@ import LoginScreen from '../screens/LoginScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import HomeScreen from '../screens/HomeScreen';
 import WorkoutScreen from '../screens/WorkoutScreen';
+import RunScreen from '../screens/RunScreen';
 import ProgressScreen from '../screens/ProgressScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 
@@ -79,6 +80,15 @@ function MainTabs() {
           title: 'LOG WORKOUT',
           tabBarLabel: 'Workout',
           tabBarIcon: ({ focused }) => <TabIcon emoji="🏋️" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="Run"
+        component={RunScreen}
+        options={{
+          title: 'RUN LOG',
+          tabBarLabel: 'Run',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🏃" focused={focused} />,
         }}
       />
       <Tab.Screen

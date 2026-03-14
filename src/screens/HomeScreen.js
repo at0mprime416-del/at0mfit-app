@@ -10,11 +10,12 @@ import { colors } from '../theme/colors';
 import Card from '../components/Card';
 import GoldButton from '../components/GoldButton';
 import { supabase } from '../lib/supabase';
+import { formatPace } from './RunScreen';
 
 export default function HomeScreen({ navigation }) {
   const [profile, setProfile] = useState(null);
   const [todayWorkout, setTodayWorkout] = useState(null);
-  const [weeklyStats, setWeeklyStats] = useState({ workouts: 0, exercises: 0 });
+  const [weeklyStats, setWeeklyStats] = useState({ workouts: 0, exercises: 0, weeklyMiles: 0, lastRun: null });
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
@@ -55,7 +56,33 @@ export default function HomeScreen({ navigation }) {
         (sum, w) => sum + (w.exercises?.length || 0),
         0
       );
-      setWeeklyStats({ workouts: weekWorkouts.length, exercises: totalExercises });
+
+      // Weekly run miles
+      const { data: weekRuns } = await supabase
+        .from('runs')
+        .select('distance_mi')
+        .eq('user_id', user.id)
+        .gte('date', weekAgo.toISOString().split('T')[0]);
+
+      const weeklyMiles = weekRuns
+        ? weekRuns.reduce((sum, r) => sum + (parseFloat(r.distance_mi) || 0), 0)
+        : 0;
+
+      // Last run
+      const { data: lastRunData } = await supabase
+        .from('runs')
+        .select('date, distance_mi, pace_per_mile_seconds')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false })
+        .limit(1)
+        .single();
+
+      setWeeklyStats({
+        workouts: weekWorkouts.length,
+        exercises: totalExercises,
+        weeklyMiles,
+        lastRun: lastRunData || null,
+      });
     }
   };
 
@@ -163,7 +190,48 @@ export default function HomeScreen({ navigation }) {
           </Text>
           <Text style={styles.statLabel}>Streak</Text>
         </Card>
+        <Card style={styles.statCard}>
+          <Text style={[styles.statValue, { color: colors.blue }]}>
+            {weeklyStats.weeklyMiles.toFixed(1)}
+          </Text>
+          <Text style={styles.statLabel}>Run mi</Text>
+        </Card>
       </View>
+
+      {/* Last Run card */}
+      {weeklyStats.lastRun && (
+        <>
+          <Text style={styles.sectionLabel}>LAST RUN</Text>
+          <Card style={styles.lastRunCard}>
+            <View style={styles.lastRunRow}>
+              <Text style={styles.lastRunEmoji}>🏃</Text>
+              <View style={styles.lastRunInfo}>
+                <Text style={styles.lastRunDate}>
+                  {new Date(weeklyStats.lastRun.date + 'T12:00:00').toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </Text>
+                <Text style={styles.lastRunMeta}>
+                  {weeklyStats.lastRun.distance_mi
+                    ? `${Number(weeklyStats.lastRun.distance_mi).toFixed(2)} mi`
+                    : '--'}{' '}
+                  ·{' '}
+                  {formatPace(weeklyStats.lastRun.pace_per_mile_seconds)}/mi
+                </Text>
+              </View>
+              <GoldButton
+                title="Run Log"
+                variant="ghost"
+                onPress={() => navigation.navigate('Run')}
+                style={styles.lastRunBtn}
+                textStyle={{ fontSize: 13 }}
+              />
+            </View>
+          </Card>
+        </>
+      )}
 
       {/* Motivational quote */}
       <Card style={styles.quoteCard}>
@@ -293,6 +361,35 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.muted,
     letterSpacing: 1,
+  },
+  lastRunCard: {
+    marginBottom: 24,
+  },
+  lastRunRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  lastRunEmoji: {
+    fontSize: 28,
+  },
+  lastRunInfo: {
+    flex: 1,
+  },
+  lastRunDate: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 2,
+  },
+  lastRunMeta: {
+    fontSize: 13,
+    color: colors.muted,
+  },
+  lastRunBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    minHeight: 36,
   },
   quoteCard: {
     padding: 20,
