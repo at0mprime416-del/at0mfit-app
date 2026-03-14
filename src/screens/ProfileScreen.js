@@ -8,11 +8,18 @@ import {
   Alert,
   TouchableOpacity,
   Modal,
+  Image,
+  ActivityIndicator,
+  ActionSheetIOS,
+  Platform,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../theme/colors';
 import Card from '../components/Card';
 import GoldButton from '../components/GoldButton';
 import { supabase } from '../lib/supabase';
+import FilteredImage from '../components/FilteredImage';
+import PhotoFilterModal from '../components/PhotoFilterModal';
 
 const GOAL_LABELS = {
   strength: '💪 Build Strength',
@@ -54,6 +61,11 @@ export default function ProfileScreen({ navigation }) {
   // Units toggle
   const [units, setUnits] = useState('lbs');
   const [savingUnits, setSavingUnits] = useState(false);
+
+  // Avatar photo
+  const [pendingPhotoUri, setPendingPhotoUri] = useState(null);
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -99,6 +111,108 @@ export default function ProfileScreen({ navigation }) {
       setStats({ totalWorkouts: workouts.length, totalExercises: totalEx });
     }
   };
+
+  // ─── Avatar photo pick ───────────────────────────────────────────────────────
+
+  const openAvatarPicker = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Take Photo', 'Choose from Library', 'Cancel'],
+          cancelButtonIndex: 2,
+        },
+        (idx) => {
+          if (idx === 0) launchCamera();
+          else if (idx === 1) launchLibrary();
+        }
+      );
+    } else {
+      Alert.alert('Profile Photo', 'Choose source', [
+        { text: 'Take Photo', onPress: launchCamera },
+        { text: 'Choose from Library', onPress: launchLibrary },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
+
+  const launchCamera = async () => {
+    const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+    if (!granted) {
+      Alert.alert('Camera access required', 'Please enable camera access in settings.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      setPendingPhotoUri(result.assets[0].uri);
+      setFilterModalVisible(true);
+    }
+  };
+
+  const launchLibrary = async () => {
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) {
+      Alert.alert('Library access required', 'Please enable photo library access in settings.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      setPendingPhotoUri(result.assets[0].uri);
+      setFilterModalVisible(true);
+    }
+  };
+
+  const handleFilterSave = async (filterName /*, label unused for profile */) => {
+    setFilterModalVisible(false);
+    if (!pendingPhotoUri) return;
+
+    setUploadingAvatar(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const filePath = `${user.id}/avatar.jpg`;
+      const response = await fetch(pendingPhotoUri);
+      const blob = await response.blob();
+
+      const { error: uploadError } = await supabase.storage
+        .from('profile-photos')
+        .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage.from('profile-photos').getPublicUrl(filePath);
+      const avatarUrl = urlData.publicUrl + `?t=${Date.now()}`; // cache bust
+
+      await supabase
+        .from('profiles')
+        .update({ avatar_url: urlData.publicUrl, avatar_filter: filterName })
+        .eq('id', user.id);
+
+      setProfile((p) => ({ ...p, avatar_url: avatarUrl, avatar_filter: filterName }));
+    } catch (err) {
+      Alert.alert('Upload failed', err.message);
+    } finally {
+      setUploadingAvatar(false);
+      setPendingPhotoUri(null);
+    }
+  };
+
+  const handleFilterCancel = () => {
+    setFilterModalVisible(false);
+    setPendingPhotoUri(null);
+  };
+
+  // ─── Other profile actions ────────────────────────────────────────────────────
 
   const saveName = async () => {
     if (!name.trim()) return;
@@ -233,18 +347,65 @@ export default function ProfileScreen({ navigation }) {
     return `${ft}'${inches}"`;
   };
 
-  return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-    >
-      {/* Avatar / Name block */}
-      <View style={styles.avatarSection}>
+  // ─── Avatar render ────────────────────────────────────────────────────────────
+
+  const renderAvatar = () => {
+    if (uploadingAvatar) {
+      return (
+        <View style={styles.avatar}>
+          <ActivityIndicator color={colors.background} />
+        </View>
+      );
+    }
+
+    if (profile?.avatar_url) {
+      return (
+        <TouchableOpacity onPress={openAvatarPicker} activeOpacity={0.85}>
+          <FilteredImage
+            uri={profile.avatar_url}
+            filterName={profile.avatar_filter || 'original'}
+            style={styles.avatar}
+            imageStyle={{ borderRadius: 40 }}
+          />
+          <View style={styles.avatarEditBadge}>
+            <Text style={styles.avatarEditBadgeText}>✏️</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <TouchableOpacity onPress={openAvatarPicker} activeOpacity={0.85}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>
             {(profile?.name || 'A').charAt(0).toUpperCase()}
           </Text>
         </View>
+        <View style={styles.avatarEditBadge}>
+          <Text style={styles.avatarEditBadgeText}>📷</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+    >
+      {/* Filter Modal */}
+      <PhotoFilterModal
+        visible={filterModalVisible}
+        uri={pendingPhotoUri}
+        context="profile"
+        onSave={handleFilterSave}
+        onCancel={handleFilterCancel}
+      />
+
+      {/* Avatar / Name block */}
+      <View style={styles.avatarSection}>
+        {renderAvatar()}
+
         {/* Subscription tier badge */}
         <View style={[
           styles.tierBadge,
@@ -476,13 +637,11 @@ export default function ProfileScreen({ navigation }) {
       {/* Settings */}
       <Text style={styles.sectionLabel}>SETTINGS</Text>
       <Card>
-        {/* Theme: static info row (app is dark-only) */}
         <View style={styles.settingRow}>
           <Text style={styles.settingLabel}>Theme</Text>
           <Text style={styles.settingValue}>Dark ⚫</Text>
         </View>
         <View style={styles.divider} />
-        {/* Units: functional toggle */}
         <View style={styles.settingRow}>
           <Text style={styles.settingLabel}>Units</Text>
           <TouchableOpacity
@@ -587,11 +746,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
+    overflow: 'hidden',
   },
   avatarText: {
     fontSize: 34,
     fontWeight: '800',
     color: colors.background,
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 10,
+    right: -2,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  avatarEditBadgeText: {
+    fontSize: 11,
   },
   tierBadge: {
     borderRadius: 8,
@@ -856,7 +1032,6 @@ const styles = StyleSheet.create({
   fitnessChipTextActive: {
     color: colors.gold,
   },
-  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.75)',
