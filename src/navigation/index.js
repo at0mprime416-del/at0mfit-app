@@ -17,7 +17,7 @@ import RunScreen from '../screens/RunScreen';
 import ProgressScreen from '../screens/ProgressScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import NutritionScreen from '../screens/NutritionScreen';
-import LeaderboardScreen from '../screens/LeaderboardScreen';
+import CompeteScreen from '../screens/CompeteScreen';
 import AIWorkoutScreen from '../screens/AIWorkoutScreen';
 import LiveRunScreen from '../screens/LiveRunScreen';
 import GymScreen from '../screens/GymScreen';
@@ -91,7 +91,7 @@ function CompeteNavigator() {
     <CompeteStack.Navigator screenOptions={screenOptions}>
       <CompeteStack.Screen
         name="Leaderboard"
-        component={LeaderboardScreen}
+        component={CompeteScreen}
         options={{ title: 'COMPETE' }}
       />
       <CompeteStack.Screen
