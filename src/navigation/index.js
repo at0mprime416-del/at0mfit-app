@@ -19,6 +19,7 @@ import ProfileScreen from '../screens/ProfileScreen';
 import NutritionScreen from '../screens/NutritionScreen';
 import LeaderboardScreen from '../screens/LeaderboardScreen';
 import AIWorkoutScreen from '../screens/AIWorkoutScreen';
+import LiveRunScreen from '../screens/LiveRunScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -204,6 +205,11 @@ export default function RootNavigator() {
             title: '⚛ AI COACH',
             headerBackTitle: 'Back',
           }}
+        />
+        <Stack.Screen
+          name="LiveRun"
+          component={LiveRunScreen}
+          options={{ headerShown: false }}
         />
       </Stack.Navigator>
     </NavigationContainer>

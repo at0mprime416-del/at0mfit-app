@@ -192,7 +192,7 @@ function RunCard({ run }) {
 
 const FILTER_OPTIONS = ['All', 'Outdoor', 'Indoor'];
 
-export default function RunScreen() {
+export default function RunScreen({ navigation }) {
   const [runs, setRuns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -414,6 +414,14 @@ export default function RunScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+        {/* TRACK RUN button */}
+        <TouchableOpacity
+          style={styles.trackRunBtn}
+          onPress={() => navigation.navigate('LiveRun')}
+        >
+          <Text style={styles.trackRunBtnText}>TRACK RUN 📍</Text>
+        </TouchableOpacity>
+
         {/* Header Stats */}
         <View style={styles.statsRow}>
           <Card style={styles.statCard}>
@@ -643,6 +651,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  trackRunBtn: {
+    backgroundColor: colors.gold,
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  trackRunBtnText: {
+    color: '#0a0a0a',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 2,
   },
   content: {
     padding: 20,

@@ -6,15 +6,37 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0a0a0a",
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "At0m Fit uses your location to track runs.",
+          "locationWhenInUsePermission": "At0m Fit uses your location to track runs."
+        }
+      ]
+    ],
     "ios": {
       "bundleIdentifier": "com.at0mfit.app",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "config": {
+        "googleMapsApiKey": "AIzaSyBYAe1iwUyAoMnZ3hIYG7P30Tb8oAiCwxM"
+      },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "At0m Fit uses your location to track runs.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "At0m Fit uses your location to track runs."
+      }
     },
     "android": {
       "package": "com.at0mfit.app",
       "adaptiveIcon": {
         "backgroundColor": "#0a0a0a"
-      }
+      },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBYAe1iwUyAoMnZ3hIYG7P30Tb8oAiCwxM"
+        }
+      },
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
     },
     "owner": "at0mprime",
     "extra": {
