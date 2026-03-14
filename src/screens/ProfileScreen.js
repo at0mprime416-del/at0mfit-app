@@ -44,7 +44,12 @@ export default function ProfileScreen({ navigation }) {
   const [metricAge, setMetricAge] = useState('');
   const [metricWakeTime, setMetricWakeTime] = useState('06:00');
   const [metricSleepTime, setMetricSleepTime] = useState('22:00');
+  const [metricFitnessLevel, setMetricFitnessLevel] = useState('beginner');
+  const [metricBodyFat, setMetricBodyFat] = useState('');
   const [savingMetrics, setSavingMetrics] = useState(false);
+
+  // ToS modal
+  const [tosModalVisible, setTosModalVisible] = useState(false);
 
   // Units toggle
   const [units, setUnits] = useState('lbs');
@@ -77,6 +82,8 @@ export default function ProfileScreen({ navigation }) {
     if (prof?.age) setMetricAge(String(prof.age));
     if (prof?.wake_time) setMetricWakeTime(prof.wake_time);
     if (prof?.sleep_time) setMetricSleepTime(prof.sleep_time);
+    if (prof?.fitness_level) setMetricFitnessLevel(prof.fitness_level);
+    if (prof?.body_fat_pct) setMetricBodyFat(String(prof.body_fat_pct));
 
     // Total stats
     const { data: workouts } = await supabase
@@ -134,6 +141,8 @@ export default function ProfileScreen({ navigation }) {
         age: parseInt(metricAge) || null,
         wake_time: metricWakeTime || '06:00',
         sleep_time: metricSleepTime || '22:00',
+        fitness_level: metricFitnessLevel || 'beginner',
+        body_fat_pct: parseFloat(metricBodyFat) || null,
       })
       .eq('id', user.id);
 
@@ -167,6 +176,42 @@ export default function ProfileScreen({ navigation }) {
         },
       },
     ]);
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure? This deletes ALL your data permanently.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Final Warning',
+              'This cannot be undone. Delete everything?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'DELETE EVERYTHING',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await supabase.rpc('delete_user');
+                    } catch (e) {
+                      // If RPC fails, just sign out
+                    }
+                    await supabase.auth.signOut();
+                    navigation.replace('Login');
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
   };
 
   const heightDisplay = () => {
@@ -319,6 +364,29 @@ export default function ProfileScreen({ navigation }) {
               placeholderTextColor={colors.muted}
               keyboardType="numbers-and-punctuation"
             />
+            <Text style={styles.metricLabel}>FITNESS LEVEL</Text>
+            <View style={styles.fitnessLevelRow}>
+              {['beginner','intermediate','advanced','elite'].map((lvl) => (
+                <TouchableOpacity
+                  key={lvl}
+                  style={[styles.fitnessChip, metricFitnessLevel === lvl && styles.fitnessChipActive]}
+                  onPress={() => setMetricFitnessLevel(lvl)}
+                >
+                  <Text style={[styles.fitnessChipText, metricFitnessLevel === lvl && styles.fitnessChipTextActive]}>
+                    {lvl.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.metricLabel}>BODY FAT % (optional)</Text>
+            <TextInput
+              style={styles.metricInput}
+              value={metricBodyFat}
+              onChangeText={setMetricBodyFat}
+              placeholder="15.0"
+              placeholderTextColor={colors.muted}
+              keyboardType="decimal-pad"
+            />
             <GoldButton
               title="SAVE METRICS"
               onPress={saveMetrics}
@@ -358,6 +426,20 @@ export default function ProfileScreen({ navigation }) {
                   {profile?.sleep_time || '22:00'}
                 </Text>
                 <Text style={styles.metricItemLabel}>SLEEP</Text>
+              </View>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricValue}>
+                  {profile?.body_fat_pct ? `${profile.body_fat_pct}%` : '—'}
+                </Text>
+                <Text style={styles.metricItemLabel}>BODY FAT</Text>
+              </View>
+            </View>
+            <View style={styles.metricsDisplay}>
+              <View style={styles.metricItem}>
+                <Text style={[styles.metricValue, { fontSize: 13 }]}>
+                  {profile?.fitness_level ? profile.fitness_level.toUpperCase() : '—'}
+                </Text>
+                <Text style={styles.metricItemLabel}>LEVEL</Text>
               </View>
             </View>
           </View>
@@ -421,6 +503,14 @@ export default function ProfileScreen({ navigation }) {
         onPress={handleSignOut}
         style={styles.signOutBtn}
       />
+
+      {/* Danger Zone */}
+      <View style={styles.dangerZone}>
+        <TouchableOpacity style={styles.deleteAccountBtn} onPress={handleDeleteAccount}>
+          <Text style={styles.deleteAccountText}>DELETE ACCOUNT</Text>
+        </TouchableOpacity>
+        <Text style={styles.dangerCaption}>Permanently deletes all your data</Text>
+      </View>
 
       {/* Goal edit modal */}
       <Modal
@@ -700,6 +790,59 @@ const styles = StyleSheet.create({
   },
   signOutBtn: {
     marginTop: 28,
+  },
+  dangerZone: {
+    marginTop: 24,
+    marginBottom: 20,
+    alignItems: 'center',
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  deleteAccountBtn: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#ff4444',
+    marginBottom: 6,
+  },
+  deleteAccountText: {
+    color: '#ff4444',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+  },
+  dangerCaption: {
+    color: colors.muted,
+    fontSize: 11,
+  },
+  fitnessLevelRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 4,
+  },
+  fitnessChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.inputBg,
+  },
+  fitnessChipActive: {
+    borderColor: colors.gold,
+    backgroundColor: 'rgba(201,168,76,0.12)',
+  },
+  fitnessChipText: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  fitnessChipTextActive: {
+    color: colors.gold,
   },
   // Modal
   modalOverlay: {

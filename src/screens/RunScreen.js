@@ -114,7 +114,17 @@ const chartStyles = StyleSheet.create({
   },
 });
 
+function formatDuration(seconds) {
+  if (!seconds || seconds <= 0) return null;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 function RunCard({ run }) {
+  const duration = formatDuration(run.duration_seconds);
   return (
     <Card style={styles.runCard}>
       <View style={styles.runCardHeader}>
@@ -139,6 +149,14 @@ function RunCard({ run }) {
           </Text>
           <Text style={styles.runStatLabel}>PACE/MI</Text>
         </View>
+        {duration ? (
+          <View style={styles.runStatItem}>
+            <Text style={[styles.runStatValue, { color: colors.gold }]}>
+              {duration}
+            </Text>
+            <Text style={styles.runStatLabel}>DURATION</Text>
+          </View>
+        ) : null}
         {run.avg_hr ? (
           <View style={styles.runStatItem}>
             <Text style={[styles.runStatValue, { color: colors.error }]}>
@@ -181,6 +199,7 @@ export default function RunScreen() {
   const [saving, setSaving] = useState(false);
   const [activeFilter, setActiveFilter] = useState('All');
   const [weeklyData, setWeeklyData] = useState([]);
+  const [chartRange, setChartRange] = useState(7); // 7, 30, or 90 days
 
   // Header stats
   const [monthMiles, setMonthMiles] = useState(0);
@@ -239,14 +258,22 @@ export default function RunScreen() {
         setLastRunDate(data[0].date);
       }
 
-      // Build last 7 days mileage chart
-      const days = [];
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        days.push(toDateStr(d));
-      }
-      const chartData = days.map((day) => {
+      // Build mileage chart (rebuilds on chartRange change too)
+      buildChartData(data, 7);
+    }
+    setLoading(false);
+  };
+
+  const buildChartData = (data, range) => {
+    const days = [];
+    for (let i = range - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      days.push(toDateStr(d));
+    }
+    let chartData;
+    if (range <= 7) {
+      chartData = days.map((day) => {
         const dayMiles = data
           .filter((r) => r.date === day)
           .reduce((sum, r) => sum + (parseFloat(r.distance_mi) || 0), 0);
@@ -255,14 +282,33 @@ export default function RunScreen() {
           .slice(0, 1);
         return { label, value: dayMiles };
       });
-      setWeeklyData(chartData);
+    } else {
+      // Group by week for 30D/90D
+      const weeks = {};
+      days.forEach((day) => {
+        const d = new Date(day + 'T00:00:00');
+        // week number relative to start
+        const weekNum = Math.floor(days.indexOf(day) / 7);
+        if (!weeks[weekNum]) weeks[weekNum] = { miles: 0, label: `W${weekNum + 1}` };
+        const dayMiles = data
+          .filter((r) => r.date === day)
+          .reduce((sum, r) => sum + (parseFloat(r.distance_mi) || 0), 0);
+        weeks[weekNum].miles += dayMiles;
+      });
+      chartData = Object.values(weeks).map((w) => ({ label: w.label, value: parseFloat(w.miles.toFixed(1)) }));
     }
-    setLoading(false);
+    setWeeklyData(chartData);
   };
 
   useEffect(() => {
     fetchRuns();
   }, []);
+
+  // Re-build chart when range changes
+  useEffect(() => {
+    if (runs.length > 0) buildChartData(runs, chartRange);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartRange, runs]);
 
   const resetForm = () => {
     setSelectedDate(todayDate());
@@ -391,7 +437,22 @@ export default function RunScreen() {
         {/* Weekly mileage chart */}
         {!loading && weeklyData.some((d) => d.value > 0) && (
           <>
-            <Text style={styles.sectionLabel}>WEEKLY MILEAGE</Text>
+            <View style={styles.chartHeaderRow}>
+              <Text style={styles.sectionLabel}>MILEAGE CHART</Text>
+              <View style={styles.rangeToggle}>
+                {[7, 30, 90].map((r) => (
+                  <TouchableOpacity
+                    key={r}
+                    style={[styles.rangeBtn, chartRange === r && styles.rangeBtnActive]}
+                    onPress={() => setChartRange(r)}
+                  >
+                    <Text style={[styles.rangeBtnText, chartRange === r && styles.rangeBtnTextActive]}>
+                      {r === 7 ? '7D' : r === 30 ? '30D' : '90D'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
             <Card style={styles.chartCard}>
               <BarChart data={weeklyData} maxValue={maxWeeklyMi} barColor={colors.blue} />
             </Card>
@@ -616,6 +677,35 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     marginBottom: 12,
     marginTop: 4,
+  },
+  chartHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  rangeToggle: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  rangeBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  rangeBtnActive: {
+    backgroundColor: 'rgba(201,168,76,0.2)',
+  },
+  rangeBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.muted,
+  },
+  rangeBtnTextActive: {
+    color: colors.gold,
   },
   chartCard: {
     marginBottom: 20,

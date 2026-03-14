@@ -16,6 +16,8 @@ import WorkoutScreen from '../screens/WorkoutScreen';
 import RunScreen from '../screens/RunScreen';
 import ProgressScreen from '../screens/ProgressScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import NutritionScreen from '../screens/NutritionScreen';
+import LeaderboardScreen from '../screens/LeaderboardScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -45,6 +47,10 @@ function TabIcon({ emoji, focused }) {
   );
 }
 
+// Split into two tab groups to avoid overcrowding:
+// Main: Home | Workout | Run | Progress | Profile
+// More: Calendar | Nutrition | Compete
+// We'll just fit all 8 with smaller labels for now
 function MainTabs() {
   return (
     <Tab.Navigator
@@ -60,9 +66,9 @@ function MainTabs() {
         tabBarActiveTintColor: colors.gold,
         tabBarInactiveTintColor: colors.muted,
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 9,
           fontWeight: '600',
-          letterSpacing: 0.5,
+          letterSpacing: 0.3,
         },
       }}
     >
@@ -73,15 +79,6 @@ function MainTabs() {
           title: 'AT0M FIT',
           tabBarLabel: 'Home',
           tabBarIcon: ({ focused }) => <TabIcon emoji="🏠" focused={focused} />,
-        }}
-      />
-      <Tab.Screen
-        name="Calendar"
-        component={CalendarScreen}
-        options={{
-          title: 'CALENDAR',
-          tabBarLabel: 'Calendar',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="📅" focused={focused} />,
         }}
       />
       <Tab.Screen
@@ -103,12 +100,30 @@ function MainTabs() {
         }}
       />
       <Tab.Screen
+        name="Nutrition"
+        component={NutritionScreen}
+        options={{
+          title: 'NUTRITION',
+          tabBarLabel: 'Nutrition',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🥗" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
         name="Progress"
         component={ProgressScreen}
         options={{
           title: 'PROGRESS',
           tabBarLabel: 'Progress',
           tabBarIcon: ({ focused }) => <TabIcon emoji="📈" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="Compete"
+        component={LeaderboardScreen}
+        options={{
+          title: 'LEADERBOARD',
+          tabBarLabel: 'Compete',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🏆" focused={focused} />,
         }}
       />
       <Tab.Screen
@@ -121,6 +136,17 @@ function MainTabs() {
         }}
       />
     </Tab.Navigator>
+  );
+}
+
+// Stack to hold Calendar accessible from Home
+const HomeStack = createStackNavigator();
+function HomeStackNav() {
+  return (
+    <HomeStack.Navigator screenOptions={screenOptions}>
+      <HomeStack.Screen name="HomeMain" component={HomeScreen} options={{ title: 'AT0M FIT' }} />
+      <HomeStack.Screen name="Calendar" component={CalendarScreen} options={{ title: 'CALENDAR' }} />
+    </HomeStack.Navigator>
   );
 }
 

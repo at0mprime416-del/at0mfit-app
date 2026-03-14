@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,16 +9,21 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  Animated,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import Card from '../components/Card';
 import GoldButton from '../components/GoldButton';
 import { supabase } from '../lib/supabase';
+import { useProfile } from '../context/ProfileContext';
 
 const EXERCISE_TEMPLATES = [
   'Squat', 'Bench Press', 'Deadlift', 'Overhead Press',
   'Pull-ups', 'Barbell Row', 'Romanian Deadlift', 'Dips',
 ];
+
+const REST_PRESETS = [60, 90, 120, 180];
 
 // Format elapsed seconds as MM:SS
 function formatTimer(seconds) {
@@ -27,8 +32,123 @@ function formatTimer(seconds) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+// Epley 1RM formula
+function calcEpley1RM(weight, reps) {
+  if (!weight || !reps || reps <= 0) return 0;
+  return weight * (1 + reps / 30);
+}
+
+// ─── Rest Timer Modal ────────────────────────────────────────────────────────
+function RestTimerModal({ visible, onDismiss }) {
+  const [duration, setDuration] = useState(90);
+  const [remaining, setRemaining] = useState(90);
+  const [flashing, setFlashing] = useState(false);
+  const timerRef = useRef(null);
+  const flashAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      setRemaining(90);
+      setDuration(90);
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) {
+      clearInterval(timerRef.current);
+      return;
+    }
+    timerRef.current = setInterval(() => {
+      setRemaining((r) => {
+        if (r <= 1) {
+          clearInterval(timerRef.current);
+          // Flash effect at 0
+          Animated.sequence([
+            Animated.timing(flashAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
+            Animated.timing(flashAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
+            Animated.timing(flashAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
+            Animated.timing(flashAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
+          ]).start(() => {
+            setTimeout(onDismiss, 300);
+          });
+          return 0;
+        }
+        return r - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [visible, flashAnim, onDismiss]);
+
+  const selectDuration = (secs) => {
+    setDuration(secs);
+    setRemaining(secs);
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setRemaining((r) => {
+        if (r <= 1) {
+          clearInterval(timerRef.current);
+          Animated.sequence([
+            Animated.timing(flashAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
+            Animated.timing(flashAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
+            Animated.timing(flashAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
+            Animated.timing(flashAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
+          ]).start(() => setTimeout(onDismiss, 300));
+          return 0;
+        }
+        return r - 1;
+      });
+    }, 1000);
+  };
+
+  const progress = duration > 0 ? remaining / duration : 0;
+  const bgColor = flashAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['rgba(0,0,0,0.85)', 'rgba(201,168,76,0.5)'],
+  });
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onDismiss}>
+      <Animated.View style={[timerStyles.overlay, { backgroundColor: bgColor }]}>
+        <View style={timerStyles.modal}>
+          <Text style={timerStyles.title}>REST</Text>
+
+          {/* Progress bar */}
+          <View style={timerStyles.progressTrack}>
+            <View style={[timerStyles.progressBar, { width: `${progress * 100}%` }]} />
+          </View>
+
+          {/* Countdown */}
+          <Text style={timerStyles.countdown}>{formatTimer(remaining)}</Text>
+
+          {/* Quick-select buttons */}
+          <View style={timerStyles.presets}>
+            {REST_PRESETS.map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={[timerStyles.preset, duration === s && timerStyles.presetActive]}
+                onPress={() => selectDuration(s)}
+              >
+                <Text style={[timerStyles.presetText, duration === s && timerStyles.presetTextActive]}>
+                  {s}s
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Skip button */}
+          <TouchableOpacity style={timerStyles.skipBtn} onPress={onDismiss}>
+            <Text style={timerStyles.skipText}>SKIP</Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    </Modal>
+  );
+}
+
 // Single set row inside an exercise
-function SetRow({ setData, setIndex, onUpdateWeight, onUpdateReps, onToggleComplete, onRemove }) {
+function SetRow({ setData, setIndex, onUpdateWeight, onUpdateReps, onToggleComplete, onRemove, weightLabel }) {
   return (
     <View style={styles.setRow}>
       <Text style={styles.setNumber}>{setIndex + 1}</Text>
@@ -36,7 +156,7 @@ function SetRow({ setData, setIndex, onUpdateWeight, onUpdateReps, onToggleCompl
         style={styles.setInput}
         value={setData.weight}
         onChangeText={onUpdateWeight}
-        placeholder="lbs"
+        placeholder={weightLabel || 'lbs'}
         placeholderTextColor={colors.muted}
         keyboardType="decimal-pad"
       />
@@ -64,7 +184,18 @@ function SetRow({ setData, setIndex, onUpdateWeight, onUpdateReps, onToggleCompl
   );
 }
 
-function ExerciseCard({ exercise, onAddSet, onUpdateSet, onRemoveSet, onUpdateNotes, onRemove }) {
+function ExerciseCard({ exercise, onAddSet, onUpdateSet, onRemoveSet, onUpdateNotes, onRemove, onSetCompleted, weightLabel }) {
+  // Calculate estimated 1RM
+  let max1RM = 0;
+  for (const s of exercise.sets) {
+    const w = parseFloat(s.weight) || 0;
+    const r = parseInt(s.reps) || 0;
+    if (w > 0 && r > 0) {
+      const est = calcEpley1RM(w, r);
+      if (est > max1RM) max1RM = est;
+    }
+  }
+
   return (
     <Card style={styles.exerciseCard}>
       {/* Header */}
@@ -84,7 +215,7 @@ function ExerciseCard({ exercise, onAddSet, onUpdateSet, onRemoveSet, onUpdateNo
       {exercise.sets.length > 0 && (
         <View style={styles.setHeaderRow}>
           <Text style={styles.setHeaderCell}>#</Text>
-          <Text style={[styles.setHeaderCell, { flex: 1, textAlign: 'center' }]}>LBS</Text>
+          <Text style={[styles.setHeaderCell, { flex: 1, textAlign: 'center' }]}>{(weightLabel || 'LBS').toUpperCase()}</Text>
           <Text style={styles.setHeaderSep} />
           <Text style={[styles.setHeaderCell, { flex: 1, textAlign: 'center' }]}>REPS</Text>
           <Text style={[styles.setHeaderCell, { width: 36 }]} />
@@ -98,12 +229,21 @@ function ExerciseCard({ exercise, onAddSet, onUpdateSet, onRemoveSet, onUpdateNo
           key={i}
           setData={s}
           setIndex={i}
+          weightLabel={weightLabel}
           onUpdateWeight={(v) => onUpdateSet(i, 'weight', v)}
           onUpdateReps={(v) => onUpdateSet(i, 'reps', v)}
-          onToggleComplete={() => onUpdateSet(i, 'completed', !s.completed)}
+          onToggleComplete={() => {
+            onUpdateSet(i, 'completed', !s.completed);
+            if (!s.completed) onSetCompleted();
+          }}
           onRemove={() => onRemoveSet(i)}
         />
       ))}
+
+      {/* Estimated 1RM */}
+      {max1RM > 0 && (
+        <Text style={styles.estRM}>Est. 1RM: {Math.round(max1RM)} {weightLabel || 'lbs'}</Text>
+      )}
 
       {/* Add set button */}
       <TouchableOpacity style={styles.addSetBtn} onPress={onAddSet}>
@@ -124,11 +264,19 @@ function ExerciseCard({ exercise, onAddSet, onUpdateSet, onRemoveSet, onUpdateNo
 }
 
 export default function WorkoutScreen() {
+  const { weightLabel } = useProfile();
   const [workoutName, setWorkoutName] = useState('');
   const [exercises, setExercises] = useState([]);
   const [newExerciseName, setNewExerciseName] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedWorkoutId, setSavedWorkoutId] = useState(null);
+
+  // Rest timer
+  const [restTimerVisible, setRestTimerVisible] = useState(false);
+
+  // Exercise library search
+  const [libraryQuery, setLibraryQuery] = useState('');
+  const [libraryResults, setLibraryResults] = useState([]);
 
   // Session timer
   const [elapsed, setElapsed] = useState(0);
@@ -215,6 +363,18 @@ export default function WorkoutScreen() {
     return null;
   };
 
+  // Library search
+  const searchLibrary = useCallback(async (query) => {
+    setLibraryQuery(query);
+    if (!query.trim()) { setLibraryResults([]); return; }
+    const { data } = await supabase
+      .from('exercises_library')
+      .select('name, muscle_group')
+      .ilike('name', `%${query.trim()}%`)
+      .limit(8);
+    setLibraryResults(data || []);
+  }, []);
+
   const addExercise = async (name) => {
     const trimmed = (name || newExerciseName).trim();
     if (!trimmed) return;
@@ -230,6 +390,8 @@ export default function WorkoutScreen() {
       },
     ]);
     setNewExerciseName('');
+    setLibraryQuery('');
+    setLibraryResults([]);
   };
 
   const addSetToExercise = (exIndex) => {
@@ -277,7 +439,7 @@ export default function WorkoutScreen() {
     setExercises((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Total volume: sum weight * reps for completed sets
+  // Total volume: sum weight * reps for all sets
   const totalVolume = exercises.reduce((sum, e) => {
     return (
       sum +
@@ -371,12 +533,15 @@ export default function WorkoutScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      {/* Rest Timer Modal */}
+      <RestTimerModal visible={restTimerVisible} onDismiss={() => setRestTimerVisible(false)} />
+
       {/* Timer header bar */}
       <View style={styles.timerBar}>
         <Text style={styles.timerLabel}>SESSION</Text>
         <Text style={styles.timerValue}>{formatTimer(elapsed)}</Text>
         <Text style={styles.volumeText}>
-          Vol: {Math.round(totalVolume).toLocaleString()} lbs
+          Vol: {Math.round(totalVolume).toLocaleString()} {weightLabel}
         </Text>
       </View>
 
@@ -403,11 +568,13 @@ export default function WorkoutScreen() {
               <ExerciseCard
                 key={`${exercise.name}-${index}`}
                 exercise={exercise}
+                weightLabel={weightLabel}
                 onAddSet={() => addSetToExercise(index)}
                 onUpdateSet={(setIdx, field, val) => updateSetField(index, setIdx, field, val)}
                 onRemoveSet={(setIdx) => removeSet(index, setIdx)}
                 onUpdateNotes={(notes) => updateExerciseNotes(index, notes)}
                 onRemove={() => removeExercise(index)}
+                onSetCompleted={() => setRestTimerVisible(true)}
               />
             ))}
           </>
@@ -430,8 +597,33 @@ export default function WorkoutScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Exercise Library Search */}
+        <Text style={styles.sectionLabel}>SEARCH LIBRARY</Text>
+        <TextInput
+          style={styles.nameInput}
+          value={libraryQuery}
+          onChangeText={searchLibrary}
+          placeholder="Search exercises..."
+          placeholderTextColor={colors.muted}
+          autoCapitalize="none"
+        />
+        {libraryResults.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templates}>
+            {libraryResults.map((r) => (
+              <TouchableOpacity
+                key={r.name}
+                style={styles.libraryChip}
+                onPress={() => addExercise(r.name)}
+              >
+                <Text style={styles.libraryChipName}>{r.name}</Text>
+                <Text style={styles.libraryChipMuscle}>{r.muscle_group}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+
         {/* Quick templates */}
-        <Text style={styles.sectionLabel}>QUICK ADD</Text>
+        <Text style={styles.sectionLabel}>POPULAR</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templates}>
           {EXERCISE_TEMPLATES.map((t) => (
             <TouchableOpacity
@@ -449,7 +641,7 @@ export default function WorkoutScreen() {
           <View style={styles.volumeRow}>
             <Text style={styles.volumeRowLabel}>TOTAL VOLUME</Text>
             <Text style={styles.volumeRowValue}>
-              {Math.round(totalVolume).toLocaleString()} lbs
+              {Math.round(totalVolume).toLocaleString()} {weightLabel}
             </Text>
           </View>
         )}
@@ -710,5 +902,115 @@ const styles = StyleSheet.create({
   },
   saveBtn: {
     marginTop: 16,
+  },
+  estRM: {
+    fontSize: 12,
+    color: colors.gold,
+    fontWeight: '600',
+    marginTop: 6,
+    marginBottom: 2,
+    textAlign: 'right',
+  },
+  libraryChip: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+    alignItems: 'center',
+  },
+  libraryChipName: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  libraryChipMuscle: {
+    color: colors.muted,
+    fontSize: 10,
+  },
+});
+
+// ─── Rest Timer Styles ───────────────────────────────────────────────────────
+const timerStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modal: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    padding: 32,
+    width: 320,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  title: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.gold,
+    letterSpacing: 3,
+    marginBottom: 20,
+  },
+  progressTrack: {
+    width: '100%',
+    height: 6,
+    backgroundColor: colors.border,
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 24,
+  },
+  progressBar: {
+    height: 6,
+    backgroundColor: colors.gold,
+    borderRadius: 3,
+  },
+  countdown: {
+    fontSize: 64,
+    fontWeight: '800',
+    color: colors.gold,
+    letterSpacing: 2,
+    marginBottom: 28,
+  },
+  presets: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 24,
+  },
+  preset: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  presetActive: {
+    borderColor: colors.gold,
+    backgroundColor: 'rgba(201,168,76,0.15)',
+  },
+  presetText: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  presetTextActive: {
+    color: colors.gold,
+  },
+  skipBtn: {
+    paddingHorizontal: 32,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  skipText: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1.5,
   },
 });

@@ -7,6 +7,9 @@ import {
   RefreshControl,
   TouchableOpacity,
   Alert,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import Card from '../components/Card';
@@ -70,6 +73,12 @@ export default function HomeScreen({ navigation }) {
   const [goalLoading, setGoalLoading] = useState(false);
   const [teamMembership, setTeamMembership] = useState(null);
   const [userId, setUserId] = useState(null);
+
+  // Quick-log weight
+  const [todayWeight, setTodayWeight] = useState(null);
+  const [showWeightInput, setShowWeightInput] = useState(false);
+  const [weightInput, setWeightInput] = useState('');
+  const [savingWeight, setSavingWeight] = useState(false);
 
   const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -181,6 +190,15 @@ export default function HomeScreen({ navigation }) {
       .single();
     setTeamMembership(membership || null);
 
+    // ─── Today's weight ───────────────────────────────────────────────────────
+    const { data: weightLog } = await supabase
+      .from('body_weight_logs')
+      .select('weight_lbs')
+      .eq('user_id', user.id)
+      .eq('date', today)
+      .single();
+    setTodayWeight(weightLog?.weight_lbs || null);
+
     // ─── AI Daily Goal ────────────────────────────────────────────────────────
     const { data: existingGoal } = await supabase
       .from('daily_goals')
@@ -212,6 +230,21 @@ export default function HomeScreen({ navigation }) {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
+  };
+
+  const saveWeight = async () => {
+    const val = parseFloat(weightInput);
+    if (!val || val <= 0) { Alert.alert('Invalid', 'Enter a valid weight.'); return; }
+    setSavingWeight(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const today = new Date().toISOString().split('T')[0];
+    await supabase
+      .from('body_weight_logs')
+      .upsert({ user_id: user.id, date: today, weight_lbs: val }, { onConflict: 'user_id,date' });
+    setTodayWeight(val);
+    setShowWeightInput(false);
+    setWeightInput('');
+    setSavingWeight(false);
   };
 
   const handleMarkComplete = async () => {
@@ -407,6 +440,44 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.statLabel}>Run mi</Text>
         </Card>
       </View>
+
+      {/* Quick-log weight */}
+      {todayWeight ? (
+        <TouchableOpacity onPress={() => { setWeightInput(String(todayWeight)); setShowWeightInput(true); }}>
+          <Text style={styles.weightLoggedText}>⚖️ Today: {todayWeight} lbs — tap to update</Text>
+        </TouchableOpacity>
+      ) : !showWeightInput ? (
+        <TouchableOpacity style={styles.weightLogBtn} onPress={() => setShowWeightInput(true)}>
+          <Text style={styles.weightLogBtnText}>+ Log weight</Text>
+        </TouchableOpacity>
+      ) : null}
+      {showWeightInput && (
+        <View style={styles.weightInputRow}>
+          <TextInput
+            style={styles.weightInput}
+            value={weightInput}
+            onChangeText={setWeightInput}
+            placeholder="185.0"
+            placeholderTextColor={colors.muted}
+            keyboardType="decimal-pad"
+            autoFocus
+          />
+          <Text style={styles.weightUnit}>lbs</Text>
+          <TouchableOpacity
+            style={styles.weightSaveBtn}
+            onPress={saveWeight}
+            disabled={savingWeight}
+          >
+            <Text style={styles.weightSaveBtnText}>Save</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.weightCancelBtn}
+            onPress={() => { setShowWeightInput(false); setWeightInput(''); }}
+          >
+            <Text style={styles.weightCancelBtnText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Last Run card */}
       {weeklyStats.lastRun && (
@@ -741,5 +812,63 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.gold,
     fontWeight: '600',
+  },
+  weightLogBtn: {
+    alignSelf: 'flex-start',
+    marginTop: -12,
+    marginBottom: 16,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  weightLogBtnText: {
+    color: colors.gold,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  weightLoggedText: {
+    color: colors.muted,
+    fontSize: 12,
+    marginTop: -12,
+    marginBottom: 16,
+  },
+  weightInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: -8,
+    marginBottom: 16,
+  },
+  weightInput: {
+    flex: 1,
+    backgroundColor: colors.inputBg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    color: colors.text,
+    fontSize: 15,
+  },
+  weightUnit: {
+    color: colors.muted,
+    fontSize: 13,
+  },
+  weightSaveBtn: {
+    backgroundColor: colors.gold,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  weightSaveBtnText: {
+    color: colors.background,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  weightCancelBtn: {
+    padding: 8,
+  },
+  weightCancelBtnText: {
+    color: colors.muted,
+    fontSize: 14,
   },
 });

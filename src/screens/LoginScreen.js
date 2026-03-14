@@ -34,17 +34,28 @@ function humanizeAuthError(error) {
   return 'Something went wrong. Try again.';
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Inline validation errors
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [authError, setAuthError] = useState('');
+
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Missing fields', 'Enter your email and password.');
-      return;
-    }
+    setAuthError('');
+    let valid = true;
+    if (!EMAIL_REGEX.test(email.trim())) { setEmailError('Enter a valid email address.'); valid = false; }
+    else setEmailError('');
+    if (!password || password.length < 6) { setPasswordError('Password must be at least 6 characters.'); valid = false; }
+    else setPasswordError('');
+    if (!valid) return;
+
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
@@ -52,7 +63,7 @@ export default function LoginScreen({ navigation }) {
     });
     setLoading(false);
     if (error) {
-      Alert.alert('Login failed', humanizeAuthError(error));
+      setAuthError(humanizeAuthError(error));
     } else {
       navigation.replace('Main');
     }
@@ -76,24 +87,27 @@ export default function LoginScreen({ navigation }) {
 
         {/* Form */}
         <View style={styles.form}>
+          {authError ? <Text style={styles.authError}>{authError}</Text> : null}
+
           <Text style={styles.label}>EMAIL</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, emailError ? styles.inputError : null]}
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(v) => { setEmail(v); if (EMAIL_REGEX.test(v.trim())) setEmailError(''); }}
             placeholder="you@example.com"
             placeholderTextColor={colors.muted}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
           />
+          {emailError ? <Text style={styles.fieldError}>{emailError}</Text> : null}
 
           <Text style={styles.label}>PASSWORD</Text>
           <View style={styles.passwordRow}>
             <TextInput
-              style={[styles.input, styles.passwordInput]}
+              style={[styles.input, styles.passwordInput, passwordError ? styles.inputError : null]}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(v) => { setPassword(v); if (v.length >= 6) setPasswordError(''); }}
               placeholder="••••••••"
               placeholderTextColor={colors.muted}
               secureTextEntry={!showPassword}
@@ -107,6 +121,8 @@ export default function LoginScreen({ navigation }) {
               <Text style={styles.eyeIcon}>{showPassword ? '🙈' : '👁'}</Text>
             </TouchableOpacity>
           </View>
+
+          {passwordError ? <Text style={styles.fieldError}>{passwordError}</Text> : null}
 
           <GoldButton
             title="SIGN IN"
@@ -228,5 +244,20 @@ const styles = StyleSheet.create({
   link: {
     color: colors.gold,
     fontWeight: '600',
+  },
+  inputError: {
+    borderColor: '#ff4444',
+  },
+  fieldError: {
+    color: '#ff4444',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  authError: {
+    color: '#ff4444',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 4,
   },
 });
