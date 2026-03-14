@@ -641,7 +641,7 @@ export default function ProgressScreen() {
 
     const { data: workouts } = await supabase
       .from('workouts')
-      .select('date, exercises(weight_lbs, sets, reps)')
+      .select('date, exercises(weight, sets, reps)')
       .eq('user_id', user.id)
       .gte('date', startDate);
 
@@ -656,7 +656,7 @@ export default function ProgressScreen() {
         const dayWorkouts = (workouts || []).filter((w) => w.date === day);
         const volume = dayWorkouts.reduce((sum, w) => {
           const exVol = (w.exercises || []).reduce(
-            (s, e) => s + ((e.weight_lbs || 0) * (e.sets || 1) * (e.reps || 1)),
+            (s, e) => s + ((e.weight || 0) * (e.sets || 1) * (e.reps || 1)),
             0
           );
           return sum + exVol;
@@ -672,10 +672,10 @@ export default function ProgressScreen() {
     // PRs
     const { data: allExercises } = await supabase
       .from('exercises')
-      .select('name, weight_lbs, sets, reps, workout_id, workouts!inner(user_id, date)')
+      .select('name, weight, sets, reps, workout_id, workouts!inner(user_id, date)')
       .eq('workouts.user_id', user.id)
-      .not('weight_lbs', 'is', null)
-      .order('weight_lbs', { ascending: false });
+      .not('weight', 'is', null)
+      .order('weight', { ascending: false });
 
     if (allExercises) {
       const seen = new Set();
@@ -685,7 +685,7 @@ export default function ProgressScreen() {
           seen.add(ex.name);
           prList.push({
             name: ex.name,
-            weight: ex.weight_lbs,
+            weight: ex.weight,
             sets: ex.sets,
             reps: ex.reps,
             date: new Date(ex.workouts.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -701,7 +701,7 @@ export default function ProgressScreen() {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
     const { data: weightLogs } = await supabase
       .from('body_weight_logs')
-      .select('id, date, weight_lbs')
+      .select('id, date, weight')
       .eq('user_id', user.id)
       .gte('date', thirtyDaysAgo.toISOString().split('T')[0])
       .order('date', { ascending: true });
@@ -710,7 +710,7 @@ export default function ProgressScreen() {
       setWeightData(
         weightLogs.map((w) => ({
           label: new Date(w.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          weight: parseFloat(w.weight_lbs),
+          weight: parseFloat(w.weight),
         }))
       );
       setWeightHistory(weightLogs.slice(-7).reverse());
@@ -732,7 +732,7 @@ export default function ProgressScreen() {
 
     const { data: runs } = await supabase
       .from('runs')
-      .select('date, distance_mi')
+      .select('date, distance')
       .eq('user_id', user.id)
       .gte('date', mileageStartStr);
 
@@ -746,7 +746,7 @@ export default function ProgressScreen() {
       .map((day) => {
         const miles = (runs || [])
           .filter((r) => r.date === day)
-          .reduce((sum, r) => sum + (parseFloat(r.distance_mi) || 0), 0);
+          .reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
         const label = isMileageShort
           ? new Date(day + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 1)
           : new Date(day + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).slice(0, 4);
@@ -770,16 +770,16 @@ export default function ProgressScreen() {
     // Run records
     const { data: allRuns } = await supabase
       .from('runs')
-      .select('distance_mi, pace_per_mile_seconds, elevation_ft')
+      .select('distance, pace_per_mile_seconds, elevation_ft')
       .eq('user_id', user.id);
 
     if (allRuns && allRuns.length > 0) {
       let longestRun = null, bestPaceRun = null, mostElevationRun = null;
       for (const r of allRuns) {
-        const dist = parseFloat(r.distance_mi) || 0;
+        const dist = parseFloat(r.distance) || 0;
         const pace = r.pace_per_mile_seconds;
         const elev = r.elevation_ft || 0;
-        if (dist > 0 && (longestRun === null || dist > longestRun.distance_mi)) longestRun = { ...r, distance_mi: dist };
+        if (dist > 0 && (longestRun === null || dist > longestRun.distance)) longestRun = { ...r, distance: dist };
         if (pace && pace > 0 && (bestPaceRun === null || pace < bestPaceRun.pace_per_mile_seconds)) bestPaceRun = { ...r, pace_per_mile_seconds: pace };
         if (elev > 0 && (mostElevationRun === null || elev > mostElevationRun.elevation_ft)) mostElevationRun = { ...r, elevation_ft: elev };
       }
@@ -856,7 +856,7 @@ export default function ProgressScreen() {
     const today = todayStr();
     const { error } = await supabase
       .from('body_weight_logs')
-      .upsert({ user_id: user.id, date: today, weight_lbs: w }, { onConflict: 'user_id,date' });
+      .upsert({ user_id: user.id, date: today, weight: w }, { onConflict: 'user_id,date' });
 
     setSavingWeight(false);
     if (error) {
@@ -945,7 +945,7 @@ export default function ProgressScreen() {
                       {new Date(entry.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </Text>
                     <Text style={styles.weightHistoryValue}>
-                      {entry.weight_lbs} {weightLabel}
+                      {entry.weight} {weightLabel}
                     </Text>
                     <TouchableOpacity
                       style={styles.weightDeleteBtn}
@@ -1108,7 +1108,7 @@ export default function ProgressScreen() {
                 <Text style={styles.runRecordEmoji}>📏</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.runRecordLabel}>LONGEST RUN</Text>
-                  <Text style={styles.runRecordValue}>{Number(runRecords.longestRun.distance_mi).toFixed(2)} mi</Text>
+                  <Text style={styles.runRecordValue}>{Number(runRecords.longestRun.distance).toFixed(2)} mi</Text>
                 </View>
               </View>
             )}

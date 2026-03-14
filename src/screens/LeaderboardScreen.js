@@ -201,7 +201,7 @@ export default function LeaderboardScreen() {
     // Global leaderboard
     const { data: lb } = await supabase
       .from('leaderboard')
-      .select('id, name, team_name, total_tokens')
+      .select('user_id, username, team_name, total_tokens')
       .limit(20);
     setGlobalRows(lb || []);
 
@@ -248,7 +248,7 @@ export default function LeaderboardScreen() {
   const loadCompResults = useCallback(async (eventId) => {
     const { data } = await supabase
       .from('event_registrations')
-      .select('*, profiles(name)')
+      .select('*, profiles(full_name)')
       .eq('event_id', eventId)
       .order('result_value', { ascending: true });
     setCompResults(data || []);
@@ -740,13 +740,13 @@ export default function LeaderboardScreen() {
           ) : (
             <Card>
               {globalRows.map((row, i) => (
-                <View key={row.id}>
+                <View key={row.user_id}>
                   <RankRow
                     rank={i + 1}
-                    name={row.name}
+                    name={row.username}
                     teamName={row.team_name}
                     tokens={row.total_tokens}
-                    isCurrentUser={row.id === currentUserId}
+                    isCurrentUser={row.user_id === currentUserId}
                   />
                   {i < globalRows.length - 1 && <View style={styles.divider} />}
                 </View>
@@ -1123,7 +1123,7 @@ export default function LeaderboardScreen() {
                 <View key={r.id} style={styles.resultRow}>
                   <Text style={[styles.rankNum, i < 3 && styles.rankNumTop]}>{i + 1}</Text>
                   <Text style={[styles.rankName, { flex: 1, marginLeft: 8 }]}>
-                    {r.profiles?.name || 'Anonymous'}
+                    {r.profiles?.full_name || 'Anonymous'}
                   </Text>
                   <Text style={styles.rankTokens}>
                     {r.result_value} {r.result_unit || ''}

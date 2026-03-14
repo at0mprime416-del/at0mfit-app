@@ -607,7 +607,7 @@ export default function LiveRunScreen({ navigation }) {
         user_id: user.id,
         date: todayStr(),
         type: selectedType,
-        distance_mi: dist,
+        distance: dist,
         duration_seconds: dur,
         pace_per_mile_seconds: pace,
         elevation_ft: Math.round(elevationGainRef.current),

@@ -171,10 +171,10 @@ export default function CalendarScreen({ navigation }) {
 
     const [{ data: wData }, { data: rData }, { data: nData }, { data: recData }, { data: mealData }] = await Promise.all([
       supabase.from('workouts').select('id, name, exercises(id, name)').eq('user_id', userId).eq('date', dateStr).order('created_at', { ascending: false }).limit(1).single(),
-      supabase.from('runs').select('distance_mi, duration_seconds, pace_per_mile_seconds').eq('user_id', userId).eq('date', dateStr).order('created_at', { ascending: false }).limit(1).single(),
+      supabase.from('runs').select('distance, duration_seconds, pace_per_mile_seconds').eq('user_id', userId).eq('date', dateStr).order('created_at', { ascending: false }).limit(1).single(),
       supabase.from('nutrition_logs').select('*').eq('user_id', userId).eq('date', dateStr).single(),
       supabase.from('recovery_logs').select('*').eq('user_id', userId).eq('date', dateStr).single(),
-      supabase.from('meal_logs').select('meal_name, calories, protein_g').eq('user_id', userId).eq('date', dateStr).order('created_at', { ascending: true }),
+      supabase.from('meal_logs').select('name, calories, protein').eq('user_id', userId).eq('date', dateStr).order('created_at', { ascending: true }),
     ]);
 
     if (wData) setDayWorkout(wData);
@@ -325,7 +325,7 @@ export default function CalendarScreen({ navigation }) {
               <Text style={styles.detailEmoji}>🏃</Text>
               <View style={styles.detailInfo}>
                 <Text style={styles.detailTitle}>
-                  {Number(dayRun.distance_mi).toFixed(2)} mi run
+                  {Number(dayRun.distance).toFixed(2)} mi run
                 </Text>
                 {dayRun.pace_per_mile_seconds ? (
                   <Text style={styles.detailMeta}>
@@ -396,7 +396,7 @@ export default function CalendarScreen({ navigation }) {
                 <Text style={styles.mealSummaryText}>
                   {dayMealLogs.reduce((s, m) => s + (parseInt(m.calories) || 0), 0)} kcal
                   {' · '}
-                  {dayMealLogs.reduce((s, m) => s + (parseFloat(m.protein_g) || 0), 0).toFixed(0)}g protein
+                  {dayMealLogs.reduce((s, m) => s + (parseFloat(m.protein) || 0), 0).toFixed(0)}g protein
                   {' · '}
                   {dayMealLogs.length} meal{dayMealLogs.length !== 1 ? 's' : ''}
                 </Text>
@@ -420,7 +420,7 @@ export default function CalendarScreen({ navigation }) {
                 <Text style={styles.mealSummaryText}>
                   {dayMealLogs.reduce((s, m) => s + (parseInt(m.calories) || 0), 0)} kcal
                   {' · '}
-                  {dayMealLogs.reduce((s, m) => s + (parseFloat(m.protein_g) || 0), 0).toFixed(0)}g protein
+                  {dayMealLogs.reduce((s, m) => s + (parseFloat(m.protein) || 0), 0).toFixed(0)}g protein
                   {' · '}
                   {dayMealLogs.length} meal{dayMealLogs.length !== 1 ? 's' : ''}
                 </Text>

@@ -82,7 +82,7 @@ export default function ProfileScreen({ navigation }) {
       .single();
 
     setProfile({ ...prof, email: user.email });
-    setName(prof?.name || '');
+    setName(prof?.full_name || '');
     setUnits(prof?.preferred_units || 'lbs');
 
     // Pre-fill physical metrics
@@ -220,9 +220,9 @@ export default function ProfileScreen({ navigation }) {
     const { data: { user } } = await supabase.auth.getUser();
     await supabase
       .from('profiles')
-      .update({ name: name.trim() })
+      .update({ full_name: name.trim() })
       .eq('id', user.id);
-    setProfile((p) => ({ ...p, name: name.trim() }));
+    setProfile((p) => ({ ...p, full_name: name.trim() }));
     setSaving(false);
     setEditing(false);
   };
@@ -378,7 +378,7 @@ export default function ProfileScreen({ navigation }) {
       <TouchableOpacity onPress={openAvatarPicker} activeOpacity={0.85}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>
-            {(profile?.name || 'A').charAt(0).toUpperCase()}
+            {(profile?.full_name || 'A').charAt(0).toUpperCase()}
           </Text>
         </View>
         <View style={styles.avatarEditBadge}>
@@ -441,7 +441,7 @@ export default function ProfileScreen({ navigation }) {
             style={styles.profileName}
             onPress={() => setEditing(true)}
           >
-            {profile?.name || 'Unnamed Operator'}{' '}
+            {profile?.full_name || 'Unnamed Operator'}{' '}
             <Text style={styles.editHint}>✏️</Text>
           </Text>
         )}

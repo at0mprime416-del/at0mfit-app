@@ -212,7 +212,7 @@ export default function GymScreen({ navigation }) {
     const [evRes, merRes, memRes] = await Promise.all([
       supabase.from('events').select('*').eq('host_id', gymId).eq('host_type', 'gym').gte('event_date', new Date().toISOString()).order('event_date'),
       supabase.from('gym_merch').select('*').eq('gym_id', gymId).eq('available', true),
-      supabase.from('gym_members').select('*, profiles(name, city, state)').eq('gym_id', gymId).limit(30),
+      supabase.from('gym_members').select('*, profiles(full_name, city, state)').eq('gym_id', gymId).limit(30),
     ]);
     setGymEvents(evRes.data || []);
     setGymMerch(merRes.data || []);
@@ -618,10 +618,10 @@ export default function GymScreen({ navigation }) {
                         gymMembers.map((m) => (
                           <View key={m.id} style={styles.memberRow}>
                             <View style={styles.memberAvatar}>
-                              <Text style={styles.memberAvatarText}>{(m.profiles?.name || 'U').charAt(0)}</Text>
+                              <Text style={styles.memberAvatarText}>{(m.profiles?.full_name || 'U').charAt(0)}</Text>
                             </View>
                             <View style={{ flex: 1 }}>
-                              <Text style={styles.memberName}>{m.profiles?.name || 'Unknown'}</Text>
+                              <Text style={styles.memberName}>{m.profiles?.full_name || 'Unknown'}</Text>
                               {(m.profiles?.city || m.profiles?.state) && (
                                 <Text style={styles.memberLocation}>
                                   📍 {[m.profiles?.city, m.profiles?.state].filter(Boolean).join(', ')}

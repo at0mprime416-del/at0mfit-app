@@ -254,10 +254,10 @@ function LeaderboardRow({ rank, user, isCurrentUser, expanded, onPress, animDela
     >
       <Text style={[st.lbRank, { color: rankColor(rank) }]}>#{rank}</Text>
       <View style={[st.lbAvatar, { backgroundColor: rankColor(rank) + '33', borderColor: rankColor(rank) }]}>
-        <Text style={[st.lbAvatarText, { color: rankColor(rank) }]}>{getInitial(user.name)}</Text>
+        <Text style={[st.lbAvatarText, { color: rankColor(rank) }]}>{getInitial(user.username)}</Text>
       </View>
       <View style={st.lbInfo}>
-        <Text style={st.lbName}>{(user.name || 'UNKNOWN').toUpperCase()}</Text>
+        <Text style={st.lbName}>{(user.username || 'UNKNOWN').toUpperCase()}</Text>
         {user.team_name ? <Text style={st.lbTeam}>{user.team_name}</Text> : null}
       </View>
       <View style={st.lbRight}>
@@ -599,7 +599,7 @@ export default function CompeteScreen() {
           // Update the global rows token count
           setGlobalRows((prev) =>
             prev.map((row) =>
-              row.id === newRecord.id
+              row.user_id === newRecord.id
                 ? { ...row, total_tokens: newTokens }
                 : row
             )
@@ -629,7 +629,7 @@ export default function CompeteScreen() {
     // Global leaderboard
     const { data: lb } = await supabase
       .from('leaderboard')
-      .select('id, name, team_name, total_tokens')
+      .select('user_id, username, team_name, total_tokens')
       .order('total_tokens', { ascending: false })
       .limit(20);
     setGlobalRows(lb || []);
@@ -721,7 +721,7 @@ export default function CompeteScreen() {
   const loadCompResults = useCallback(async (eventId) => {
     const { data } = await supabase
       .from('event_registrations')
-      .select('*, profiles(name)')
+      .select('*, profiles(full_name)')
       .eq('event_id', eventId)
       .order('result_value', { ascending: true });
     setCompResults(data || []);
@@ -761,10 +761,10 @@ export default function CompeteScreen() {
       try {
         const { data: runs } = await supabase
           .from('runs')
-          .select('distance_mi')
+          .select('distance')
           .gte('created_at', weekAgo.toISOString());
         if (runs) {
-          totalMilesThisWeek = runs.reduce((sum, r) => sum + (parseFloat(r.distance_mi) || 0), 0);
+          totalMilesThisWeek = runs.reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
         }
       } catch (_) {}
 
@@ -800,15 +800,15 @@ export default function CompeteScreen() {
       // Recent runs in last 4 hours
       const { data: recentRuns } = await supabase
         .from('runs')
-        .select('distance_mi, created_at, profiles(name)')
+        .select('distance, created_at, profiles(full_name)')
         .gte('created_at', fourHoursAgo)
         .order('created_at', { ascending: false })
         .limit(5);
 
       if (recentRuns && recentRuns.length > 0) {
         recentRuns.forEach((r) => {
-          const name = (r.profiles?.name || 'ATHLETE').toUpperCase();
-          const dist = parseFloat(r.distance_mi || 0).toFixed(1);
+          const name = (r.profiles?.full_name || 'ATHLETE').toUpperCase();
+          const dist = parseFloat(r.distance || 0).toFixed(1);
           items.push(`🏃 ${name} ran ${dist}mi`);
         });
       }
@@ -816,7 +816,7 @@ export default function CompeteScreen() {
       // Recent workouts in last 4 hours
       const { data: recentWorkouts } = await supabase
         .from('workouts')
-        .select('created_at, profiles(name)')
+        .select('created_at, profiles(full_name)')
         .gte('created_at', fourHoursAgo)
         .order('created_at', { ascending: false })
         .limit(5);
@@ -833,14 +833,14 @@ export default function CompeteScreen() {
     try {
       const { data: top } = await supabase
         .from('leaderboard')
-        .select('name, total_tokens')
+        .select('username, total_tokens')
         .order('total_tokens', { ascending: false })
         .limit(5);
 
       if (top && top.length > 0) {
         const medals = ['🥇', '🥈', '🥉', '⚛️', '⚛️'];
         top.forEach((u, i) => {
-          items.push(`${medals[i]} ${(u.name || 'ATHLETE').toUpperCase()} — ${formatNum(u.total_tokens)} tokens`);
+          items.push(`${medals[i]} ${(u.username || 'ATHLETE').toUpperCase()} — ${formatNum(u.total_tokens)} tokens`);
         });
       }
     } catch (_) {}
@@ -1225,9 +1225,9 @@ export default function CompeteScreen() {
               <View style={st.gainCol}>
                 <Text style={st.gainLabel}>▲ TOP GAINERS</Text>
                 {topGainers.map((u) => (
-                  <View key={u.id} style={st.miniRow}>
+                  <View key={u.user_id} style={st.miniRow}>
                     <Text style={st.miniName} numberOfLines={1}>
-                      {(u.name || 'N/A').toUpperCase().slice(0, 12)}
+                      {(u.username || 'N/A').toUpperCase().slice(0, 12)}
                     </Text>
                     <Text style={[st.miniDelta, { color: GREEN }]}>
                       +{formatNum(u.total_tokens)}
@@ -1238,12 +1238,12 @@ export default function CompeteScreen() {
               <View style={st.lossCol}>
                 <Text style={st.lossLabel}>▼ BIGGEST DROPS</Text>
                 {bottomDrop.map((u) => (
-                  <View key={u.id} style={[st.miniRow, { justifyContent: 'flex-end' }]}>
+                  <View key={u.user_id} style={[st.miniRow, { justifyContent: 'flex-end' }]}>
                     <Text style={[st.miniDelta, { color: RED }]}>
                       {formatNum(u.total_tokens)}
                     </Text>
                     <Text style={[st.miniName, { textAlign: 'right', marginLeft: 4 }]} numberOfLines={1}>
-                      {(u.name || 'N/A').toUpperCase().slice(0, 12)}
+                      {(u.username || 'N/A').toUpperCase().slice(0, 12)}
                     </Text>
                   </View>
                 ))}
@@ -1265,7 +1265,7 @@ export default function CompeteScreen() {
                     <LeaderboardRow
                       rank={i + 1}
                       user={row}
-                      isCurrentUser={row.id === currentUserId}
+                      isCurrentUser={row.user_id === currentUserId}
                       expanded={expandedRow === row.id}
                       onPress={() => setExpandedRow(expandedRow === row.id ? null : row.id)}
                       animDelay={i * 100} // stagger: 0ms, 100ms, 200ms...
@@ -1597,7 +1597,7 @@ export default function CompeteScreen() {
               compResults.map((r, i) => (
                 <View key={r.id} style={st.resultRow}>
                   <Text style={[st.lbRank, { color: rankColor(i + 1) }]}>{i + 1}</Text>
-                  <Text style={[st.lbName, { flex: 1, marginLeft: 8 }]}>{r.profiles?.name || 'Anonymous'}</Text>
+                  <Text style={[st.lbName, { flex: 1, marginLeft: 8 }]}>{r.profiles?.full_name || 'Anonymous'}</Text>
                   <Text style={st.lbTokens}>{r.result_value} {r.result_unit || ''}</Text>
                 </View>
               ))

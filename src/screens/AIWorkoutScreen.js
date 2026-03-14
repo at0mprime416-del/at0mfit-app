@@ -28,6 +28,7 @@ export default function AIWorkoutScreen({ navigation }) {
   const [subscriptionTier, setSubscriptionTier] = useState(null);
   const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [workout, setWorkout] = useState(null);
   const [checkingTier, setCheckingTier] = useState(true);
 
@@ -63,12 +64,67 @@ export default function AIWorkoutScreen({ navigation }) {
     setLoading(false);
   };
 
-  const handleLoadWorkout = () => {
-    if (!workout) return;
-    // Navigate to Workout tab with pre-filled data
-    navigation.navigate('Main', {
-      screen: 'Workout',
-      params: { aiWorkout: workout },
+  const handleLoadWorkout = async () => {
+    if (!workout || !userId) return;
+    setSaving(true);
+
+    const today = new Date().toISOString().split('T')[0];
+
+    // ── Auto-save workout to DB so it's logged immediately ──────────────────
+    const { data: newWorkout, error: workoutError } = await supabase
+      .from('workouts')
+      .insert({
+        user_id: userId,
+        name: workout.workout_name || 'AI Workout',
+        date: today,
+        notes: workout.ai_notes || null,
+      })
+      .select()
+      .single();
+
+    if (workoutError) {
+      Alert.alert('Save Error', workoutError.message);
+      setSaving(false);
+      return;
+    }
+
+    // ── Save each exercise + sets ────────────────────────────────────────────
+    for (const ex of workout.exercises || []) {
+      const { data: insertedEx, error: exError } = await supabase
+        .from('exercises')
+        .insert({
+          workout_id: newWorkout.id,
+          name: ex.name,
+          sets: ex.sets || 3,
+          reps: ex.reps || null,
+          weight: ex.weight > 0 ? ex.weight : null,
+          notes: ex.notes || null,
+        })
+        .select()
+        .single();
+
+      if (exError || !insertedEx) continue;
+
+      const setsToInsert = Array.from({ length: ex.sets || 3 }, (_, idx) => ({
+        exercise_id: insertedEx.id,
+        set_number: idx + 1,
+        weight: ex.weight > 0 ? ex.weight : null,
+        reps: ex.reps || null,
+        completed: false,
+      }));
+
+      if (setsToInsert.length > 0) {
+        await supabase.from('exercise_sets').insert(setsToInsert);
+      }
+    }
+
+    setSaving(false);
+
+    // ── Navigate to WorkoutScreen with pre-filled data + saved ID ───────────
+    // AIWorkout is in the same TrainStack as Workout — navigate directly
+    navigation.navigate('Workout', {
+      aiWorkout: workout,
+      savedWorkoutId: newWorkout.id,
     });
   };
 
@@ -176,7 +232,7 @@ export default function AIWorkoutScreen({ navigation }) {
                 <View style={styles.exerciseMeta}>
                   <Text style={styles.exerciseSetsReps}>
                     {ex.sets} sets × {ex.reps} reps
-                    {ex.weight_lbs > 0 ? ` @ ${ex.weight_lbs} lbs` : ''}
+                    {ex.weight > 0 ? ` @ ${ex.weight} lbs` : ''}
                   </Text>
                   {ex.rest_seconds ? (
                     <Text style={styles.exerciseRest}>{formatRest(ex.rest_seconds)}</Text>
@@ -189,8 +245,9 @@ export default function AIWorkoutScreen({ navigation }) {
 
           {/* Actions */}
           <GoldButton
-            title="💪 LOAD INTO WORKOUT"
+            title={saving ? 'SAVING...' : '💪 LOAD INTO WORKOUT'}
             onPress={handleLoadWorkout}
+            loading={saving}
             style={styles.loadBtn}
           />
           <TouchableOpacity style={styles.regenBtn} onPress={handleGenerate}>

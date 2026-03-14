@@ -77,7 +77,7 @@ export default function SignUpScreen({ navigation }) {
     if (data.user) {
       await supabase.from('profiles').insert({
         id: data.user.id,
-        name: name.trim(),
+        full_name: name.trim(),
         goal,
       });
     }

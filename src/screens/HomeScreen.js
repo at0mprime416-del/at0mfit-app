@@ -123,18 +123,18 @@ export default function HomeScreen({ navigation }) {
       // Weekly run miles
       const { data: weekRuns } = await supabase
         .from('runs')
-        .select('distance_mi')
+        .select('distance')
         .eq('user_id', user.id)
         .gte('date', weekAgo.toISOString().split('T')[0]);
 
       const weeklyMiles = weekRuns
-        ? weekRuns.reduce((sum, r) => sum + (parseFloat(r.distance_mi) || 0), 0)
+        ? weekRuns.reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0)
         : 0;
 
       // Last run
       const { data: lastRunData } = await supabase
         .from('runs')
-        .select('date, distance_mi, pace_per_mile_seconds')
+        .select('date, distance, pace_per_mile_seconds')
         .eq('user_id', user.id)
         .order('date', { ascending: false })
         .limit(1)
@@ -193,11 +193,11 @@ export default function HomeScreen({ navigation }) {
     // ─── Today's weight ───────────────────────────────────────────────────────
     const { data: weightLog } = await supabase
       .from('body_weight_logs')
-      .select('weight_lbs')
+      .select('weight')
       .eq('user_id', user.id)
       .eq('date', today)
       .single();
-    setTodayWeight(weightLog?.weight_lbs || null);
+    setTodayWeight(weightLog?.weight || null);
 
     // ─── AI Daily Goal ────────────────────────────────────────────────────────
     const { data: existingGoal } = await supabase
@@ -240,7 +240,7 @@ export default function HomeScreen({ navigation }) {
     const today = new Date().toISOString().split('T')[0];
     await supabase
       .from('body_weight_logs')
-      .upsert({ user_id: user.id, date: today, weight_lbs: val }, { onConflict: 'user_id,date' });
+      .upsert({ user_id: user.id, date: today, weight: val }, { onConflict: 'user_id,date' });
     setTodayWeight(val);
     setShowWeightInput(false);
     setWeightInput('');
@@ -288,7 +288,7 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.greetingText}>
               {greeting()},{' '}
               <Text style={styles.greetingName}>
-                {profile?.name || 'Operator'}
+                {profile?.full_name || 'Operator'}
               </Text>{' '}
               👊
             </Text>
@@ -495,8 +495,8 @@ export default function HomeScreen({ navigation }) {
                   })}
                 </Text>
                 <Text style={styles.lastRunMeta}>
-                  {weeklyStats.lastRun.distance_mi
-                    ? `${Number(weeklyStats.lastRun.distance_mi).toFixed(2)} mi`
+                  {weeklyStats.lastRun.distance
+                    ? `${Number(weeklyStats.lastRun.distance).toFixed(2)} mi`
                     : '--'}{' '}
                   ·{' '}
                   {formatPace(weeklyStats.lastRun.pace_per_mile_seconds)}/mi

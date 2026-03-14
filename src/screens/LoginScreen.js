@@ -8,7 +8,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import GoldButton from '../components/GoldButton';

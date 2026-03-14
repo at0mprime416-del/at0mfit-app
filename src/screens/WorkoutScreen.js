@@ -285,6 +285,7 @@ export default function WorkoutScreen({ navigation, route }) {
   const [saving, setSaving] = useState(false);
   const [savedWorkoutId, setSavedWorkoutId] = useState(null);
   const [aiGenerated, setAiGenerated] = useState(false);
+  const [showAiBanner, setShowAiBanner] = useState(false);
 
   // Rest timer
   const [restTimerVisible, setRestTimerVisible] = useState(false);
@@ -306,21 +307,36 @@ export default function WorkoutScreen({ navigation, route }) {
     const aiWorkout = route?.params?.aiWorkout;
     if (aiWorkout) {
       setWorkoutName(aiWorkout.workout_name || '');
+      // Build multi-set exercise rows from AI data
       setExercises(
-        (aiWorkout.exercises || []).map((ex) => ({
-          id: null,
-          name: ex.name,
-          sets: [{ weight: ex.weight_lbs > 0 ? String(ex.weight_lbs) : '', reps: String(ex.reps || ''), completed: false }],
-          notes: ex.notes || '',
-          lastPerformance: null,
-        }))
+        (aiWorkout.exercises || []).map((ex) => {
+          const numSets = Math.max(1, ex.sets || 3);
+          const setRows = Array.from({ length: numSets }, () => ({
+            weight: ex.weight > 0 ? String(ex.weight) : '',
+            reps: String(ex.reps || ''),
+            completed: false,
+          }));
+          return {
+            id: null,
+            name: ex.name,
+            sets: setRows,
+            notes: ex.notes || '',
+            lastPerformance: null,
+          };
+        })
       );
       setAiGenerated(true);
+      setShowAiBanner(true);
+      // If auto-saved in AIWorkoutScreen, record the workout ID so Save does UPDATE not INSERT
+      if (route?.params?.savedWorkoutId) {
+        setSavedWorkoutId(route.params.savedWorkoutId);
+      }
     }
   }, [route?.params?.aiWorkout]);
 
-  // Load today's workout if exists
+  // Load today's workout if exists (skip if loaded from AI params — already populated)
   useEffect(() => {
+    if (route?.params?.aiWorkout) return; // AI pre-fill takes precedence
     const loadToday = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -351,7 +367,7 @@ export default function WorkoutScreen({ navigation, route }) {
             for (const s of setsData) {
               if (!setsMap[s.exercise_id]) setsMap[s.exercise_id] = [];
               setsMap[s.exercise_id].push({
-                weight: s.weight_lbs != null ? String(s.weight_lbs) : '',
+                weight: s.weight != null ? String(s.weight) : '',
                 reps: s.reps != null ? String(s.reps) : '',
                 completed: s.completed || false,
               });
@@ -363,7 +379,7 @@ export default function WorkoutScreen({ navigation, route }) {
           (workout.exercises || []).map((e) => ({
             id: e.id,
             name: e.name,
-            sets: setsMap[e.id] || [{ weight: String(e.weight_lbs || ''), reps: String(e.reps || ''), completed: false }],
+            sets: setsMap[e.id] || [{ weight: String(e.weight || ''), reps: String(e.reps || ''), completed: false }],
             notes: e.notes || '',
             lastPerformance: null,
           }))
@@ -379,18 +395,18 @@ export default function WorkoutScreen({ navigation, route }) {
     if (!user) return null;
     const { data } = await supabase
       .from('exercises')
-      .select('weight_lbs, sets, reps, workout_id, workouts!inner(user_id, date)')
+      .select('weight, sets, reps, workout_id, workouts!inner(user_id, date)')
       .eq('workouts.user_id', user.id)
       .ilike('name', name)
       .order('workouts.date', { ascending: false })
       .limit(1);
     if (data && data.length > 0) {
       const ex = data[0];
-      if (ex.weight_lbs && ex.reps && ex.sets) {
-        return `${ex.weight_lbs} × ${ex.reps} × ${ex.sets}`;
+      if (ex.weight && ex.reps && ex.sets) {
+        return `${ex.weight} × ${ex.reps} × ${ex.sets}`;
       }
-      if (ex.weight_lbs && ex.reps) {
-        return `${ex.weight_lbs} lbs × ${ex.reps} reps`;
+      if (ex.weight && ex.reps) {
+        return `${ex.weight} lbs × ${ex.reps} reps`;
       }
     }
     return null;
@@ -535,7 +551,7 @@ export default function WorkoutScreen({ navigation, route }) {
           name: ex.name,
           sets: ex.sets.length,
           reps: parseInt(firstSet.reps) || null,
-          weight_lbs: parseFloat(firstSet.weight) || null,
+          weight: parseFloat(firstSet.weight) || null,
           notes: ex.notes || null,
         })
         .select()
@@ -547,7 +563,7 @@ export default function WorkoutScreen({ navigation, route }) {
       const setsToInsert = ex.sets.map((s, idx) => ({
         exercise_id: insertedEx.id,
         set_number: idx + 1,
-        weight_lbs: parseFloat(s.weight) || null,
+        weight: parseFloat(s.weight) || null,
         reps: parseInt(s.reps) || null,
         completed: s.completed,
       }));
@@ -582,8 +598,20 @@ export default function WorkoutScreen({ navigation, route }) {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+        {/* ⚡ AI Workout Loaded Banner — dismisses on tap */}
+        {showAiBanner && (
+          <TouchableOpacity
+            style={styles.aiBanner}
+            onPress={() => setShowAiBanner(false)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.aiBannerText}>⚡ AI WORKOUT LOADED — edit freely</Text>
+            <Text style={styles.aiBannerDismiss}>✕</Text>
+          </TouchableOpacity>
+        )}
+
         {/* AI Generate button — PRO only */}
-        {profile?.subscription_tier === 'pro' && (
+        {profile?.subscription_tier === 'pro' && !showAiBanner && (
           <TouchableOpacity
             style={styles.aiGenerateBtn}
             onPress={() => navigation?.navigate('AIWorkout')}
@@ -712,6 +740,32 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  // ── AI Banner ────────────────────────────────────────────────────────────
+  aiBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.gold,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  aiBannerText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.background,
+    letterSpacing: 1,
+    flex: 1,
+  },
+  aiBannerDismiss: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.background,
+    opacity: 0.7,
+    paddingLeft: 8,
   },
   aiGenerateBtn: {
     flexDirection: 'row',

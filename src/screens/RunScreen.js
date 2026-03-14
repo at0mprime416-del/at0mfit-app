@@ -136,7 +136,7 @@ function RunCard({ run }) {
         </View>
         <View style={styles.runDistanceBadge}>
           <Text style={styles.runDistanceValue}>
-            {run.distance_mi ? Number(run.distance_mi).toFixed(2) : '--'}
+            {run.distance ? Number(run.distance).toFixed(2) : '--'}
           </Text>
           <Text style={styles.runDistanceUnit}>mi</Text>
         </View>
@@ -238,7 +238,7 @@ export default function RunScreen({ navigation }) {
       const thisMonthRuns = data.filter((r) => r.date >= firstOfMonth);
 
       const totalMiles = thisMonthRuns.reduce(
-        (sum, r) => sum + (parseFloat(r.distance_mi) || 0),
+        (sum, r) => sum + (parseFloat(r.distance) || 0),
         0
       );
       setMonthMiles(totalMiles);
@@ -276,7 +276,7 @@ export default function RunScreen({ navigation }) {
       chartData = days.map((day) => {
         const dayMiles = data
           .filter((r) => r.date === day)
-          .reduce((sum, r) => sum + (parseFloat(r.distance_mi) || 0), 0);
+          .reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
         const label = new Date(day + 'T00:00:00')
           .toLocaleDateString('en-US', { weekday: 'short' })
           .slice(0, 1);
@@ -292,7 +292,7 @@ export default function RunScreen({ navigation }) {
         if (!weeks[weekNum]) weeks[weekNum] = { miles: 0, label: `W${weekNum + 1}` };
         const dayMiles = data
           .filter((r) => r.date === day)
-          .reduce((sum, r) => sum + (parseFloat(r.distance_mi) || 0), 0);
+          .reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
         weeks[weekNum].miles += dayMiles;
       });
       chartData = Object.values(weeks).map((w) => ({ label: w.label, value: parseFloat(w.miles.toFixed(1)) }));
@@ -374,7 +374,7 @@ export default function RunScreen({ navigation }) {
       user_id: user.id,
       date: runDate,
       type: formType.trim() || null,
-      distance_mi,
+      distance: distance_mi,
       duration_seconds,
       pace_per_mile_seconds,
       avg_hr: formHR ? parseInt(formHR) : null,

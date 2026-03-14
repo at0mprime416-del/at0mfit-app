@@ -104,11 +104,11 @@ export default function NutritionScreen() {
     const { error } = await supabase.from('meal_logs').insert({
       user_id: user.id,
       date: today,
-      meal_name: mealName.trim(),
+      name: mealName.trim(),
       calories: parseInt(mealCals) || null,
-      protein_g: parseFloat(mealProtein) || null,
-      carbs_g: parseFloat(mealCarbs) || null,
-      fat_g: parseFloat(mealFat) || null,
+      protein: parseFloat(mealProtein) || null,
+      carbs: parseFloat(mealCarbs) || null,
+      fat: parseFloat(mealFat) || null,
       notes: mealNotes.trim() || null,
     });
     setSavingMeal(false);
@@ -156,9 +156,9 @@ export default function NutritionScreen() {
   // Macro totals
   const totals = meals.reduce(
     (acc, m) => ({
-      protein: acc.protein + (parseFloat(m.protein_g) || 0),
-      carbs: acc.carbs + (parseFloat(m.carbs_g) || 0),
-      fat: acc.fat + (parseFloat(m.fat_g) || 0),
+      protein: acc.protein + (parseFloat(m.protein) || 0),
+      carbs: acc.carbs + (parseFloat(m.carbs) || 0),
+      fat: acc.fat + (parseFloat(m.fat) || 0),
       calories: acc.calories + (parseInt(m.calories) || 0),
     }),
     { protein: 0, carbs: 0, fat: 0, calories: 0 }
@@ -275,16 +275,16 @@ export default function NutritionScreen() {
           meals.map((meal) => (
             <Card key={meal.id} style={styles.mealCard}>
               <View style={styles.mealHeader}>
-                <Text style={styles.mealName}>{meal.meal_name}</Text>
+                <Text style={styles.mealName}>{meal.name}</Text>
                 <TouchableOpacity onPress={() => deleteMeal(meal.id)}>
                   <Text style={styles.deleteBtn}>✕</Text>
                 </TouchableOpacity>
               </View>
               <View style={styles.mealMacros}>
                 {meal.calories ? <Text style={styles.mealMacro}>{meal.calories} kcal</Text> : null}
-                {meal.protein_g ? <Text style={[styles.mealMacro, { color: colors.gold }]}>P: {meal.protein_g}g</Text> : null}
-                {meal.carbs_g ? <Text style={[styles.mealMacro, { color: colors.green }]}>C: {meal.carbs_g}g</Text> : null}
-                {meal.fat_g ? <Text style={[styles.mealMacro, { color: '#ff6b6b' }]}>F: {meal.fat_g}g</Text> : null}
+                {meal.protein ? <Text style={[styles.mealMacro, { color: colors.gold }]}>P: {meal.protein}g</Text> : null}
+                {meal.carbs ? <Text style={[styles.mealMacro, { color: colors.green }]}>C: {meal.carbs}g</Text> : null}
+                {meal.fat ? <Text style={[styles.mealMacro, { color: '#ff6b6b' }]}>F: {meal.fat}g</Text> : null}
               </View>
               {meal.notes ? <Text style={styles.mealNotes}>{meal.notes}</Text> : null}
             </Card>
